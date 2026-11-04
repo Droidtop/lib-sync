@@ -93,3 +93,32 @@ jobs:
               build --release -p droidtop-agent-android --target "$target"
           done
           ls -l target/*-linux-android/release/libdroidtop_agent.so
+
+  # A green main whose version has no tag yet is released: CI tags v<version> on this commit, and that tag
+  # is what programs and the other libraries pin (Droidtop/tracker#867 D2). To release, raise the version
+  # in the root Cargo.toml (and the CHANGELOG) in the change that needs it.
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, droidtop-agent]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Tag this version if it is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          [ -n "$version" ] || { echo "no version in Cargo.toml" >&2; exit 1; }
+          tag="v$version"
+          if gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag is already released"
+          else
+            gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null
+            echo "released $tag at $GITHUB_SHA"
+          fi

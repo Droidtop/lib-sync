@@ -38,7 +38,9 @@ once CI is green.
 
 ## Versions
 
-A release is a tag `vX.Y.Z`. Programs, and the other libraries, depend on a tag:
+A release is a tag `vX.Y.Z`. CI creates it on a green `main` whose root `Cargo.toml` names a version not
+yet tagged, so to release, raise that version (and the CHANGELOG) in the change that needs it. Programs,
+and the other libraries, depend on a tag:
 
 ```toml
 droidtop-agent-core = { package = "sync-core", git = "https://github.com/Droidtop/lib-sync", tag = "v0.1.0" }
