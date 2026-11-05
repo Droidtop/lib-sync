@@ -5,6 +5,8 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.1.3]
+
 ### Added
 - `sync-core` tunnel: datagrams beside the stream (Droidtop/tracker#113). Each WireGuard session has an inner UDP
   socket next to its TCP link, and `TunnelStream::datagrams()` hands the app `Datagrams`, two queues of whole
