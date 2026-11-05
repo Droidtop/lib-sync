@@ -3,6 +3,17 @@
 All notable changes to lib-sync. Versions follow [Semantic Versioning](https://semver.org/)
 (0.x releases may change anything).
 
+## [0.1.2]
+
+### Added
+- `sync-core`: cross-store identity, first slice (Droidtop/tracker#798, droidtop-agent docs/DESIGN.md section 16
+  step 1). A third library change kind, `Change::Link {game, into, at}`: key `game` is the same game as key
+  `into`, `None` undoes it, one per key with the newest winning, a self-link refused. `Library::link` makes one
+  and `Library::canonical` follows links to the key a game is known by; a loop ends at its smallest key, so every
+  device answers alike. Hello feature `identity` (`library::LINK_FEATURE`): the server keeps what the device's
+  hello stated and leaves links out of `library_pull` for one that did not (`Change::readable_without_links`).
+- `sync-store`: `Store::set_link`.
+
 ## [0.1.1]
 
 ### Changed
