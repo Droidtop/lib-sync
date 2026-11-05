@@ -12,6 +12,9 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 user="$1"; shift
 url="https://github.com/Droidtop/lib-sync"
+# Paths given relative to where this runs, resolved before moving into the program.
+agent=""
+[ -n "${AGENT_DIR:-}" ] && agent="$(cd "$AGENT_DIR" && pwd)"
 cd "$user"
 [ -f Cargo.lock ] || cargo generate-lockfile
 if ! grep -q "$url" Cargo.lock; then
@@ -30,8 +33,7 @@ for spec in sync-core:crates/core sync-store:crates/store sync-pair:crates/pair;
 done
 # With AGENT_DIR (a droidtop-agent checkout of a ci/ branch that goes with this change), the program's droidtop-agent
 # crates come from there too, so a change all three repositories make together is built together.
-if [ -n "${AGENT_DIR:-}" ]; then
-    agent="$(cd "$AGENT_DIR" && pwd)"
+if [ -n "$agent" ]; then
     for dir in "$agent"/crates/*/; do
         name="$(sed -n 's/^name = "\(.*\)"$/\1/p' "$dir/Cargo.toml" | head -1)"
         grep -q "^name = \"$name\"$" Cargo.lock || continue
