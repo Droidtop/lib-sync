@@ -5,6 +5,25 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+- `sync-core::locked`: what droidtop locks on the person's shares, in age's format (age-encryption.org/v1), so they
+  can open it themselves with the age or rage tools (Droidtop/tracker#573; owner, 2026-11-05: "We should use
+  well-known crypto and encapsulation mechanisms, so the user can retrieve that data themselves"). A `Keyring` of the
+  person's share keys (X25519):
+  - `generate`, and `merge` as a union, so devices that each made a key keep both;
+  - `lock` to the newest key, and `open` with any key;
+  - its text is an age identity file (`to_text`, `from_text`, which also reads age-keygen's files);
+  - `export_with_passphrase` (age's scrypt mode) and `import`.
+
+### Changed (breaking)
+- `sharesaves::ShareSaveRequest`: `sealed: bool` and `key: &DeviceKey` are replaced by `lock: Option<&Keyring>`.
+  A locked part of a share now holds age files that open with any key in the person's ring, instead of the agent's
+  device-to-device sealing, which only the writing device could open. A program sets `lock` to its share keyring for
+  a locked part, or None for a plain one. No program used the old fields yet.
+
+
 ## [0.1.7]
 
 ### Added

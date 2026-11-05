@@ -22,6 +22,7 @@ pub mod gamecopy;
 pub mod hex;
 pub mod keys;
 pub mod library;
+pub mod locked;
 pub mod mailbox;
 pub mod manifest;
 pub mod moved;

@@ -13,11 +13,11 @@
 //! - `sets/<UTC stamp>-<device>.json`: a set that was replaced while it had changed too (both sides
 //!   changed and the person chose this device's). Nothing on the share is ever deleted.
 //!
-//! **Locked or trusted** (owner, 2026-11-05: "Encryption should probably be toggleable"): with
-//! [`ShareSaveRequest::sealed`] every blob and every set is sealed with the agent's sealing to this
-//! device's own key ([`mailbox::seal`]), so the share holds ciphertext only and only this device can
-//! read it. A set another device locked is not opened: the sync fails with [`crate::Error::NotPaired`] and changes
-//! nothing.
+//! **Locked or plain, per part of a share** (owner, 2026-11-05: "When parts of a share (since it doesn't
+//! have to be all or nothing) are encrypted, we can sync those keys, and let the user export the key"): with
+//! [`ShareSaveRequest::lock`] every blob and every set is an age file locked to the person's share key
+//! ([`crate::locked`]). The share holds ciphertext only. Any device with the key opens it, and so does the age tool
+//! with the exported key. A set locked with a key this device doesn't have is refused, and nothing here changes.
 //!
 //! A share that has no set for a game (a new share, or one emptied) never makes this device delete its
 //! saves: this device's set is written there instead.
@@ -29,8 +29,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::keys::DeviceKey;
-use crate::mailbox;
+use crate::locked::{self, Keyring};
 use crate::manifest::{self, FileEntry, Manifest};
 use crate::proto::GameRef;
 use crate::saves::{self, Roots, SaveSpec};
@@ -51,9 +50,9 @@ pub struct ShareSaveRequest<'a> {
     pub name: &'a str,
     /// The person picked a side: the answer to [`Outcome::Conflict`].
     pub choice: Option<Side>,
-    /// Lock what is written (and expect what is read to be locked) with this device's key.
-    pub sealed: bool,
-    pub key: &'a DeviceKey,
+    /// The person's share keys when this part of the share is locked: what is written is locked to the ring's
+    /// newest key. None writes plain files. What is read opens with any key in the ring, whichever way it was written.
+    pub lock: Option<&'a Keyring>,
 }
 
 /// The set on a share.
@@ -82,25 +81,20 @@ pub fn game_dir(game: &GameRef) -> String {
 }
 
 fn seal_if(req: &ShareSaveRequest, bytes: Vec<u8>) -> Result<Vec<u8>> {
-    if req.sealed {
-        mailbox::seal(req.key, &req.key.peer_id(), &bytes)
-    } else {
-        Ok(bytes)
+    match req.lock {
+        Some(ring) => ring.lock(&bytes),
+        None => Ok(bytes),
     }
-}
-
-/// Whether [`bytes`] were sealed by the agent's sealing.
-fn is_sealed(bytes: &[u8]) -> bool {
-    bytes.starts_with(b"DTM1")
 }
 
 fn open_if_sealed(req: &ShareSaveRequest, bytes: Vec<u8>) -> Result<Vec<u8>> {
-    if !is_sealed(&bytes) {
+    if !locked::is_locked(&bytes) {
         return Ok(bytes);
     }
-    let me = req.key.peer_id();
-    // A set another device locked can't be opened here.
-    mailbox::open(req.key, &bytes, |p| *p == me).map(|(_, plain)| plain)
+    match req.lock {
+        Some(ring) => ring.open(&bytes),
+        None => Err(protocol("this part of the share is locked; turn on its lock with your share key to read it")),
+    }
 }
 
 /// The set on the share, or None when there is none yet.
@@ -279,7 +273,7 @@ mod tests {
 
     struct Device {
         root: PathBuf,
-        key: DeviceKey,
+        ring: Keyring,
         name: &'static str,
     }
 
@@ -288,7 +282,9 @@ mod tests {
             let root = std::env::temp_dir().join(format!("dta-sharesaves-{tag}-{}", std::process::id()));
             let _ = fs::remove_dir_all(&root);
             fs::create_dir_all(root.join("saves")).unwrap();
-            Device { root, key: DeviceKey::generate(), name }
+            let mut ring = Keyring::new();
+            ring.generate();
+            Device { root, ring, name }
         }
 
         fn roots(&self) -> Roots {
@@ -306,8 +302,7 @@ mod tests {
                 archive_dir: &self.root.join("archive"),
                 name: self.name,
                 choice,
-                sealed,
-                key: &self.key,
+                lock: sealed.then_some(&self.ring),
             };
             sync_with_share(share, &req)
         }
@@ -378,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn a_locked_share_holds_ciphertext_only_and_only_its_device_opens_it() {
+    fn a_locked_share_holds_age_files_only_and_any_device_with_the_key_opens_it() {
         let share = share("sealed");
         let a = Device::new("a3", "Handheld");
         a.write("slot1.sav", "secret progress");
@@ -387,7 +382,7 @@ mod tests {
         let dir = share.local_path(&game_dir(&GameRef { key: "steam:1".into(), title: "Game".into() })).unwrap();
         for entry in walk(&dir) {
             let bytes = fs::read(&entry).unwrap();
-            assert!(is_sealed(&bytes), "{} is not sealed", entry.display());
+            assert!(locked::is_locked(&bytes), "{} is not an age file", entry.display());
             assert!(!String::from_utf8_lossy(&bytes).contains("secret progress"));
         }
         // Its own device reads it back after losing its files.
@@ -395,10 +390,24 @@ mod tests {
         fs::remove_file(a.root.join("baseline.json")).unwrap();
         a.sync(&share, true, None).unwrap();
         assert_eq!(a.read("slot1.sav").as_deref(), Some("secret progress"));
-        // Another device can't open it, and changes nothing.
-        let b = Device::new("b3", "Tablet");
+        // Another device can't open it without the key, and changes nothing.
+        let mut b = Device::new("b3", "Tablet");
         assert!(b.sync(&share, true, None).is_err());
         assert!(b.read("slot1.sav").is_none());
+        // Once the rings are merged (as a paired sync or an imported key does), it opens there too.
+        b.ring.merge(&a.ring);
+        assert!(matches!(b.sync(&share, true, None).unwrap(), Outcome::Copied { from: Side::There, .. }));
+        assert_eq!(b.read("slot1.sav").as_deref(), Some("secret progress"));
+        // And plain age opens a blob with the exported key file, as `age -d -i` does, without droidtop.
+        let blob = walk(&dir).into_iter().find(|p| p.parent().is_some_and(|d| d.ends_with("blobs"))).unwrap();
+        let exported = a.ring.to_text();
+        let identity: age::x25519::Identity = age::secrecy::ExposeSecret::expose_secret(&exported)
+            .lines()
+            .find(|l| l.starts_with("AGE-SECRET-KEY-1"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_eq!(age::decrypt(&identity, &fs::read(blob).unwrap()).unwrap(), b"secret progress");
     }
 
     fn walk(dir: &Path) -> Vec<PathBuf> {
