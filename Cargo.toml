@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/store", "crates/pair"]
 
 [workspace.package]
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/Droidtop/lib-sync"
@@ -12,6 +12,10 @@ repository = "https://github.com/Droidtop/lib-sync"
 rust-version = "1.85"
 
 [workspace.dependencies]
+# lib-net's share client, for store and forward through a WebDAV, SFTP or S3 share (sync-core's net-remote feature,
+# Droidtop/tracker#573). Optional: a program that does not ask for it never builds it, so Pythia's Rust 1.85 build is
+# untouched (net-remote needs 1.89).
+net-remote = { git = "https://github.com/Droidtop/lib-net", tag = "v0.2.1" }
 # windowcast's device identity and pairing, used as they are (docs/DESIGN.md
 # section 3). Pinned by commit; both crates are GPL-3.0-only, which is why
 # this workspace is too.

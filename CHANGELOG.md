@@ -5,6 +5,14 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.1.6]
+
+### Added
+- `sync-core`: feature `net-remote`, off by default. `share::RemoteShare` makes any lib-net share (WebDAV, SFTP, S3)
+  a `Share`, so store and forward and save sets go straight through it (Droidtop/tracker#573; owner, 2026-11-05: "A
+  share can be a backend for a sync"). lib-net's `net-remote` is taken at tag `v0.2.1`; a program that doesn't turn
+  the feature on never builds it, so Rust 1.85 still builds the rest.
+
 ## [0.1.5]
 
 ### Changed

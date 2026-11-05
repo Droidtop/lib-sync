@@ -13,7 +13,12 @@ rust-version.workspace = true
 name = "droidtop_agent_core"
 path = "src/lib.rs"
 
+[features]
+# A lib-net share (WebDAV, SFTP, S3) as a store-and-forward share: share::RemoteShare.
+net-remote = ["dep:net-remote"]
+
 [dependencies]
+net-remote = { workspace = true, optional = true }
 windowcast-identity.workspace = true
 windowcast-pairing.workspace = true
 ed25519-dalek.workspace = true
