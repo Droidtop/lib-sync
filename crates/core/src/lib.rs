@@ -31,6 +31,7 @@ pub mod rendezvous;
 pub mod saves;
 pub mod savesync;
 pub mod server;
+pub mod share;
 pub mod sync;
 pub mod tunnel;
 

@@ -5,7 +5,16 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.1.3]
+
 ### Added
+- `sync-core`: store and forward over any share (Droidtop/tracker#573, #800 item 3). `share::Share` names what sync
+  needs from a share (list a folder's finished files, read, write in one step, remove one file, make folders), with
+  `share::Folder` for a folder on this computer. A share client (lib-net's `net-remote`) is one more implementation
+  of it (owner, 2026-11-05: "lib-sync controls synchronization. A share can be a backend for a sync"). New:
+  `mailbox::post_via`, `collect_via`, `inbox_path`, `ShareLetter`, and `savesync::post_via`. `mailbox::post`,
+  `collect` and `savesync::post_to_share` keep their signatures and go through `Folder`; a letter is now written to
+  `.<name>.<tag>.part` before its rename.
 - CI's `semver` job: `cargo-semver-checks` against the last release, so a breaking change fails unless its version and
   this CHANGELOG say so (Droidtop/tracker#867).
 
