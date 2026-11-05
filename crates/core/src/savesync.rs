@@ -30,6 +30,7 @@ use crate::manifest::{self, FileEntry, Manifest};
 use crate::proto::{GameRef, Request, Response, CHUNK};
 use crate::saves::{self, Roots, SaveSpec, PART_SUFFIX};
 use crate::{error::protocol, Error, Result};
+use sync_remote::{LocalFolder, Remote};
 
 /// The device running the sync (the handheld) or the computer.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -263,6 +264,19 @@ pub enum Posted {
 /// changes nothing and keeps this set as a copy of this device's, and the
 /// next live sync asks the person.
 pub fn post_to_share(share: &Path, key: &DeviceKey, to: &PeerId, game: &GameRef, roots: &Roots, baseline_path: &Path) -> Result<Posted> {
+    post_to_remote(&LocalFolder::new(share), key, to, game, roots, baseline_path)
+}
+
+/// [`post_to_share`] for a share that is any [`Remote`]: a WebDAV share and the other backends of
+/// sync-remote (Droidtop/tracker#573, #800).
+pub fn post_to_remote(
+    share: &dyn Remote,
+    key: &DeviceKey,
+    to: &PeerId,
+    game: &GameRef,
+    roots: &Roots,
+    baseline_path: &Path,
+) -> Result<Posted> {
     let spec: Option<SaveSpec> = fs::read(spec_path(baseline_path)).ok().and_then(|b| serde_json::from_slice(&b).ok());
     let posted = posted_path(baseline_path);
     let (Some(spec), Some(base)) = (spec, load_baseline(&posted).or_else(|| load_baseline(baseline_path))) else {
@@ -281,7 +295,7 @@ pub fn post_to_share(share: &Path, key: &DeviceKey, to: &PeerId, game: &GameRef,
     }
     let bytes = contents.iter().map(|c| c.len() as u64).sum();
     let envelope = Envelope::Saves { game: game.clone(), base: base.into_values().collect(), files };
-    mailbox::post(share, key, to, &mailbox::pack(&envelope, &contents)?)?;
+    mailbox::post_to(share, key, to, &mailbox::pack(&envelope, &contents)?)?;
     save_baseline(&posted, &here)?;
     Ok(Posted::Posted { files: here.len(), bytes })
 }

@@ -17,6 +17,7 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 - `sync-core`: the store-and-forward mailbox over any share (Droidtop/tracker#800 item 3): `mailbox::post_to`,
   `collect_from` and `inbox_path` take a `Remote`. `post` and `collect` keep their signatures and behaviour and go
   through `LocalFolder`; a letter is now written to `.<name>.<tag>.part` before its rename, as every `Remote` write is.
+  `savesync::post_to_remote` leaves a game's saves on any `Remote`; `post_to_share` goes through it.
 - CI's `semver` job: `cargo-semver-checks` against the last release, so a breaking change fails unless its version and
   this CHANGELOG say so (Droidtop/tracker#867).
 
