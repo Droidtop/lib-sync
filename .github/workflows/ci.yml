@@ -47,7 +47,11 @@ jobs:
         if: success() || failure()
         run: cargo test --workspace --no-fail-fast
 
-  # droidtop-agent's main, with lib-sync taken from this commit instead of its pinned tag.
+  # droidtop-agent, with lib-sync taken from this commit instead of its pinned tag: its main, or,
+  # when droidtop-agent has a ci/ branch of the same name, that branch. A change to this library
+  # that droidtop-agent must follow (a new kind in an enum it matches on, a changed signature) is
+  # one change in two repositories, and the two halves are built together here. No pins move:
+  # which tags each program pins stays its own commit (Droidtop/tracker#867).
   droidtop-agent:
     runs-on: ubuntu-24.04
     steps:
@@ -55,9 +59,22 @@ jobs:
         with:
           path: lib
           persist-credentials: false
+      - name: The droidtop-agent branch this change goes with
+        id: pair
+        shell: bash
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          ref=main
+          if [[ "$BRANCH" == ci/* ]] && git ls-remote --exit-code --heads https://github.com/Droidtop/droidtop-agent "refs/heads/$BRANCH" >/dev/null; then
+            ref="$BRANCH"
+          fi
+          echo "droidtop-agent: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: Droidtop/droidtop-agent
+          ref: ${{ steps.pair.outputs.ref }}
           path: agent
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
