@@ -23,8 +23,24 @@ for spec in sync-core:crates/core sync-store:crates/store sync-pair:crates/pair;
     name="${spec%%:*}"; path="${spec#*:}"
     grep -q "^name = \"$name\"$" Cargo.lock || continue
     args+=(--config "patch.\"$url\".$name.path=\"$here/$path\"")
-    names+=(-p "$name")
+    # Every locked copy (a lock can hold two versions of one crate): name each, or `-p` is ambiguous.
+    for version in $(awk -v n="$name" '$0 == "name = \"" n "\"" { getline; sub(/^version = "/, ""); sub(/"$/, ""); print }' Cargo.lock); do
+        names+=(-p "$name@$version")
+    done
 done
+# With AGENT_DIR (a droidtop-agent checkout of a ci/ branch that goes with this change), the program's droidtop-agent
+# crates come from there too, so a change all three repositories make together is built together.
+if [ -n "${AGENT_DIR:-}" ]; then
+    agent="$(cd "$AGENT_DIR" && pwd)"
+    for dir in "$agent"/crates/*/; do
+        name="$(sed -n 's/^name = "\(.*\)"$/\1/p' "$dir/Cargo.toml" | head -1)"
+        grep -q "^name = \"$name\"$" Cargo.lock || continue
+        args+=(--config "patch.\"https://github.com/Droidtop/droidtop-agent\".$name.path=\"$dir\"")
+        for version in $(awk -v n="$name" '$0 == "name = \"" n "\"" { getline; sub(/^version = "/, ""); sub(/"$/, ""); print }' Cargo.lock); do
+            names+=(-p "$name@$version")
+        done
+    done
+fi
 log="$(mktemp)"
 cargo "${args[@]}" update "${names[@]}" 2>&1 | tee "$log"
 cargo "${args[@]}" "$@" 2>&1 | tee -a "$log"

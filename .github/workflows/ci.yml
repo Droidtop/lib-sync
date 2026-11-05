@@ -126,9 +126,13 @@ jobs:
         run: |
           ref=main
           # A change that droidtop must follow is one change in two repositories: a ci/ branch of the same name there
-          # is built with this one.
+          # is built with this one, or the branch .github/users-build-ref names while the users' half has not landed
+          # (the same branch name in droidtop-agent and droidtop: Droidtop/tracker#798's ci/link-change).
+          named="$(cat lib/.github/users-build-ref 2>/dev/null | tr -d '[:space:]' || true)"
           if [[ "$BRANCH" == ci/* ]] && git ls-remote --exit-code --heads https://github.com/Droidtop/droidtop "refs/heads/$BRANCH" >/dev/null; then
             ref="$BRANCH"
+          elif [[ "$named" == ci/* ]] && git ls-remote --exit-code --heads https://github.com/Droidtop/droidtop "refs/heads/$named" >/dev/null; then
+            ref="$named"
           fi
           echo "droidtop: $ref"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
@@ -139,6 +143,16 @@ jobs:
           path: droidtop
           sparse-checkout: native
           persist-credentials: false
+      # When the pairing named a ci/ branch, droidtop-agent's half of the change is built in too (its service runs
+      # native/'s mesh test).
+      - name: droidtop-agent's half, if the pairing names one
+        if: startsWith(steps.pair.outputs.ref, 'ci/')
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Droidtop/droidtop-agent
+          ref: ${{ steps.pair.outputs.ref }}
+          path: agent
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: aarch64-linux-android, x86_64-linux-android
@@ -146,9 +160,13 @@ jobs:
         with:
           workspaces: droidtop/native
       - name: Test droidtop's native library against this commit
+        env:
+          AGENT_DIR: ${{ startsWith(steps.pair.outputs.ref, 'ci/') && 'agent' || '' }}
         run: lib/scripts/with-this-library.sh droidtop/native test --locked
       - name: Build it for arm64-v8a and x86_64
         shell: bash
+        env:
+          AGENT_DIR: ${{ startsWith(steps.pair.outputs.ref, 'ci/') && 'agent' || '' }}
         run: |
           set -eu
           ndk="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"

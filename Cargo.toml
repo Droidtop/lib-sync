@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/store", "crates/pair"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/Droidtop/lib-sync"
@@ -32,7 +32,7 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 # Userspace WireGuard (BSD-3-Clause) and a userspace TCP stack to carry the
 # session channel inside it (0BSD): docs/DESIGN.md section 10.
 boringtun = { version = "0.7", default-features = false }
-smoltcp = { version = "=0.11.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp"] }
+smoltcp = { version = "=0.11.0", default-features = false, features = ["std", "medium-ip", "proto-ipv4", "socket-tcp", "socket-udp"] }
 # The session channel (docs/DESIGN.md section 4): TLS 1.3 with both sides
 # self-signed certificates pinned at pairing, on ring (it builds for every
 # target here, Android included, with no extra toolchain).
