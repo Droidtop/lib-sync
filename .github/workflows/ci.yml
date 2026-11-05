@@ -70,13 +70,7 @@ jobs:
           echo "comparing with $last"
           cargo semver-checks check-release --workspace --baseline-rev "$last"
 
-  # droidtop-agent, with lib-sync taken from this commit instead of its pinned tag: its main, or,
-  # when droidtop-agent has a ci/ branch of the same name, that branch. A change to this library
-  # that droidtop-agent must follow (a new kind in an enum it matches on, a changed signature) is
-  # one change in two repositories, and the two halves are built together here. Once the library half
-  # is on main, .github/users-build-ref names droidtop-agent's branch until that half lands too, so main
-  # and its release build against it; it is emptied when the agent's half lands. No pins move:
-  # which tags each program pins stays its own commit (Droidtop/tracker#867).
+  # droidtop-agent, built and tested with lib-sync taken from this commit (scripts/with-this-library.sh).
   droidtop-agent:
     runs-on: ubuntu-24.04
     steps:
@@ -91,8 +85,9 @@ jobs:
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           ref=main
-          # The branch this library state goes with, named in .github/users-build-ref while droidtop-agent's half
-          # of a change has not landed (it keeps main and the release building once the library half has).
+          # A change that droidtop-agent must follow is one change in two repositories: a ci/ branch of the same name there
+          # is built with this one. While droidtop-agent's half of such a change has not landed,
+          # .github/users-build-ref names its branch, so main and the release build against it.
           named="$(cat lib/.github/users-build-ref 2>/dev/null | tr -d '[:space:]' || true)"
           if [[ "$BRANCH" == ci/* ]] && git ls-remote --exit-code --heads https://github.com/Droidtop/droidtop-agent "refs/heads/$BRANCH" >/dev/null; then
             ref="$BRANCH"
@@ -108,20 +103,51 @@ jobs:
           path: agent
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-        with:
-          targets: aarch64-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: agent
       - name: Build and test droidtop-agent against this commit
-        working-directory: agent
+        run: lib/scripts/with-this-library.sh agent test --workspace --no-fail-fast
+
+  # droidtop's native library (droidtop native/, libdroidtop_agent.so), built and tested with lib-sync taken from this
+  # commit, on the runner and for both Android ABIs as droidtop's build-scripts/build-agent-lib.sh does.
+  droidtop:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: lib
+          persist-credentials: false
+      - name: The droidtop branch this change goes with
+        id: pair
+        shell: bash
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
-          cargo --config 'patch."https://github.com/Droidtop/lib-sync".sync-core.path="../lib/crates/core"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-store.path="../lib/crates/store"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-pair.path="../lib/crates/pair"' \
-            test --workspace --no-fail-fast
-      - name: Build droidtop's library (libdroidtop_agent.so) for arm64-v8a and x86_64
-        working-directory: agent
+          ref=main
+          # A change that droidtop must follow is one change in two repositories: a ci/ branch of the same name there
+          # is built with this one.
+          if [[ "$BRANCH" == ci/* ]] && git ls-remote --exit-code --heads https://github.com/Droidtop/droidtop "refs/heads/$BRANCH" >/dev/null; then
+            ref="$BRANCH"
+          fi
+          echo "droidtop: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Droidtop/droidtop
+          ref: ${{ steps.pair.outputs.ref }}
+          path: droidtop
+          sparse-checkout: native
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: droidtop/native
+      - name: Test droidtop's native library against this commit
+        run: lib/scripts/with-this-library.sh droidtop/native test --locked
+      - name: Build it for arm64-v8a and x86_64
         shell: bash
         run: |
           set -eu
@@ -134,19 +160,16 @@ jobs:
           export AR_aarch64_linux_android="$bin/llvm-ar"
           export AR_x86_64_linux_android="$bin/llvm-ar"
           for target in aarch64-linux-android x86_64-linux-android; do
-            cargo --config 'patch."https://github.com/Droidtop/lib-sync".sync-core.path="../lib/crates/core"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-store.path="../lib/crates/store"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-pair.path="../lib/crates/pair"' \
-              build --release -p droidtop-agent-android --target "$target"
+            lib/scripts/with-this-library.sh droidtop/native build --release --target "$target"
           done
-          ls -l target/*-linux-android/release/libdroidtop_agent.so
+          ls -l droidtop/native/target/*-linux-android/release/libdroidtop_agent.so 2>/dev/null || true
 
   # A green main whose version has no tag yet is released: CI tags v<version> on this commit, and that tag
   # is what programs and the other libraries pin (Droidtop/tracker#867 D2). To release, raise the version
   # in the root Cargo.toml (and the CHANGELOG) in the change that needs it.
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [test, droidtop-agent, semver]
+    needs: [test, droidtop-agent, semver, droidtop]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
