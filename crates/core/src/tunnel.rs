@@ -24,7 +24,7 @@ use boringtun::noise::{Tunn, TunnResult};
 use rand_core::{OsRng, RngCore};
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
-use smoltcp::socket::tcp;
+use smoltcp::socket::{tcp, udp};
 use smoltcp::time::Instant;
 use smoltcp::wire::{HardwareAddress, IpAddress, IpCidr};
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -40,6 +40,13 @@ const RESPONDER_IP: Ipv4Addr = Ipv4Addr::new(10, 47, 61, 2);
 const INNER_PORT: u16 = crate::PORT;
 const WIRE: usize = 65_536 + 256;
 const TCP_BUFFER: usize = 256 * 1024;
+/// The inner UDP port both ends use for datagrams beside the TCP link
+/// ([`TunnelStream::datagrams`]): a stream's media (Droidtop/tracker#113).
+const DATAGRAM_PORT: u16 = 47_613;
+/// Datagrams each way the inner UDP socket holds before it drops. The loop
+/// empties them every few milliseconds, so this covers bursts (a keyframe's
+/// packets), at about 350 KiB a session each way.
+const DATAGRAM_SLOTS: usize = 256;
 /// A session nobody has used for this long is dropped.
 const IDLE: Duration = Duration::from_secs(180);
 
@@ -110,11 +117,33 @@ pub struct TunnelStream {
     pos: usize,
     eof: bool,
     timeout: Option<Duration>,
+    datagrams: Option<Datagrams>,
+}
+
+/// Whole datagrams to and from the other end of the same tunnel, beside its
+/// stream: what a remote stream's media rides on, so the agent's tunnel is
+/// also the streaming tunnel (owner, 2026-10-28: "Our standard carrier tunnel
+/// is also a remote streaming tunnel"; Droidtop/tracker#113). Unreliable and
+/// unordered, as UDP is; each is at most [`Datagrams::MAX`] bytes. They go
+/// while the stream is open.
+pub struct Datagrams {
+    pub outbound: Sender<Vec<u8>>,
+    pub inbound: Receiver<Vec<u8>>,
+}
+
+impl Datagrams {
+    /// The largest datagram the tunnel carries in one IP packet.
+    pub const MAX: usize = MTU - 28;
 }
 
 impl TunnelStream {
     pub fn set_read_timeout(&mut self, timeout: Option<Duration>) {
         self.timeout = timeout;
+    }
+
+    /// The tunnel's datagrams, once: whoever takes them owns them.
+    pub fn datagrams(&mut self) -> Option<Datagrams> {
+        self.datagrams.take()
     }
 }
 
@@ -156,16 +185,31 @@ impl Write for TunnelStream {
     }
 }
 
-/// The loop's side of a [`TunnelStream`].
+/// The loop's side of a [`TunnelStream`]: its bytes, and its datagrams.
 struct AppSide {
     to_app: Sender<Vec<u8>>,
     from_app: Receiver<Vec<u8>>,
+    datagrams_to_app: Sender<Vec<u8>>,
+    datagrams_from_app: Receiver<Vec<u8>>,
 }
 
 fn stream_pair() -> (TunnelStream, AppSide) {
     let (to_loop, from_app) = mpsc::channel();
     let (to_app, from_loop) = mpsc::channel();
-    (TunnelStream { to_loop, from_loop, pending: Vec::new(), pos: 0, eof: false, timeout: None }, AppSide { to_app, from_app })
+    let (outbound, datagrams_from_app) = mpsc::channel();
+    let (datagrams_to_app, inbound) = mpsc::channel();
+    (
+        TunnelStream {
+            to_loop,
+            from_loop,
+            pending: Vec::new(),
+            pos: 0,
+            eof: false,
+            timeout: None,
+            datagrams: Some(Datagrams { outbound, inbound }),
+        },
+        AppSide { to_app, from_app, datagrams_to_app, datagrams_from_app },
+    )
 }
 
 fn ip(a: Ipv4Addr) -> IpAddress {
@@ -188,6 +232,7 @@ struct Session {
     iface: Interface,
     sockets: SocketSet<'static>,
     tcp: SocketHandle,
+    udp: SocketHandle,
     initiator: bool,
     app: Option<AppSide>,
     outgoing: Vec<u8>,
@@ -210,6 +255,10 @@ impl Session {
         let mut sockets = SocketSet::new(Vec::new());
         let socket = tcp::Socket::new(tcp::SocketBuffer::new(vec![0; TCP_BUFFER]), tcp::SocketBuffer::new(vec![0; TCP_BUFFER]));
         let tcp = sockets.add(socket);
+        let slots = || udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; DATAGRAM_SLOTS], vec![0; DATAGRAM_SLOTS * MTU]);
+        let mut datagrams = udp::Socket::new(slots(), slots());
+        let _ = datagrams.bind(DATAGRAM_PORT);
+        let udp = sockets.add(datagrams);
         let mut session = Session {
             tunn,
             endpoint,
@@ -217,6 +266,7 @@ impl Session {
             iface,
             sockets,
             tcp,
+            udp,
             initiator,
             app: None,
             outgoing: Vec::new(),
@@ -273,6 +323,15 @@ impl Session {
     fn pump(&mut self, udp: &UdpSocket, out: &mut [u8]) -> Option<TunnelStream> {
         let mut accepted = None;
         if let Some(app) = &self.app {
+            // The app's datagrams go to the other end's datagram port; too many at once are dropped, as UDP drops.
+            let peer = (ip(if self.initiator { RESPONDER_IP } else { INITIATOR_IP }), DATAGRAM_PORT);
+            let datagrams = self.sockets.get_mut::<udp::Socket>(self.udp);
+            while let Ok(datagram) = app.datagrams_from_app.try_recv() {
+                if datagram.len() <= Datagrams::MAX {
+                    let _ = datagrams.send_slice(&datagram, peer);
+                }
+                self.last_use = Clock::now();
+            }
             loop {
                 match app.from_app.try_recv() {
                     Ok(data) => {
@@ -303,6 +362,16 @@ impl Session {
             }
         }
         let mut chunk = vec![0u8; 16 * 1024];
+        {
+            let datagrams = self.sockets.get_mut::<udp::Socket>(self.udp);
+            while let Ok((n, _)) = datagrams.recv_slice(&mut chunk) {
+                if let Some(app) = &self.app {
+                    let _ = app.datagrams_to_app.send(chunk[..n].to_vec());
+                }
+                self.last_use = Clock::now();
+            }
+        }
+        let socket = self.sockets.get_mut::<tcp::Socket>(self.tcp);
         while socket.can_recv() {
             match socket.recv_slice(&mut chunk) {
                 Ok(0) | Err(_) => break,
@@ -620,6 +689,67 @@ mod tests {
             ch.send(call).unwrap();
             assert_eq!(ch.recv().unwrap(), call);
         }
+        stop.store(true, Ordering::Relaxed);
+        server.join().unwrap();
+    }
+
+    /// A stream's media beside the session channel: datagrams each way
+    /// through the same tunnel (Droidtop/tracker#113).
+    #[test]
+    fn datagrams_go_both_ways_beside_the_stream() {
+        let pc = DeviceKey::generate();
+        let pc_id = pc.peer_id();
+        let handheld = DeviceKey::generate();
+        let hh_id = handheld.peer_id();
+        let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let target = SocketAddr::from(([127, 0, 0, 1], udp.local_addr().unwrap().port()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_server = stop.clone();
+        let pc_seed = pc.seed();
+        let server = thread::spawn(move || {
+            serve(
+                &pc,
+                udp,
+                move || vec![hh_id],
+                move |_, mut stream| {
+                    thread::spawn(move || {
+                        // The computer echoes each datagram back, doubled, while the channel is open.
+                        let datagrams = stream.datagrams().expect("the stream's datagrams");
+                        let key = DeviceKey::from_seed(&pc_seed).unwrap();
+                        stream.set_read_timeout(Some(Duration::from_secs(20)));
+                        let mut ch = Channel::accept(stream, &key, |p| *p == hh_id).unwrap();
+                        for _ in 0..2 {
+                            let got = datagrams.inbound.recv_timeout(Duration::from_secs(20)).unwrap();
+                            datagrams.outbound.send([got.clone(), got].concat()).unwrap();
+                        }
+                        let _ = ch.recv();
+                    });
+                },
+                &stop_server,
+                &mut NoHooks,
+            )
+            .unwrap();
+        });
+        let mut stream = connect(&handheld, &pc_id, &[target], Duration::from_secs(10)).unwrap();
+        let datagrams = stream.datagrams().unwrap();
+        assert!(stream.datagrams().is_none(), "taken once");
+        stream.set_read_timeout(Some(Duration::from_secs(20)));
+        let mut ch = Channel::connect(stream, &handheld, &pc_id).unwrap();
+        for packet in [vec![1u8, 2, 3], vec![7u8; 600]] {
+            // UDP may drop: send again until the answer comes.
+            let mut answer = None;
+            for _ in 0..50 {
+                datagrams.outbound.send(packet.clone()).unwrap();
+                if let Ok(got) = datagrams.inbound.recv_timeout(Duration::from_millis(200)) {
+                    answer = Some(got);
+                    break;
+                }
+            }
+            assert_eq!(answer, Some([packet.clone(), packet].concat()));
+            // A resend the computer also answered is left over; it is not the next packet's answer.
+            while datagrams.inbound.recv_timeout(Duration::from_millis(300)).is_ok() {}
+        }
+        ch.send(b"done").unwrap();
         stop.store(true, Ordering::Relaxed);
         server.join().unwrap();
     }

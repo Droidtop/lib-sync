@@ -6,6 +6,11 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ## [Unreleased]
 
 ### Added
+- `sync-core` tunnel: datagrams beside the stream (Droidtop/tracker#113). Each WireGuard session has an inner UDP
+  socket next to its TCP link, and `TunnelStream::datagrams()` hands the app `Datagrams`, two queues of whole
+  datagrams to and from the other end. So a remote stream's media rides the agent's own tunnel (owner, 2026-10-28:
+  "Our standard carrier tunnel is also a remote streaming tunnel"). Unreliable and unordered, as UDP is; at most
+  `Datagrams::MAX` bytes each.
 - CI's `semver` job: `cargo-semver-checks` against the last release, so a breaking change fails unless its version and
   this CHANGELOG say so (Droidtop/tracker#867).
 
