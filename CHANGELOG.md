@@ -8,10 +8,10 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ## [0.1.5]
 
 ### Added
-- `sync-core` tunnel: a side link (Droidtop/tracker#113). `TunnelStream::side()` hands the app, once, a second
-  reliable byte stream through the same WireGuard session (inner TCP port 47614), beside the session channel, so a
-  remote stream's signaling runs on it unchanged while its media rides `datagrams()`. It ends with the tunnel, or
-  when either end drops its side.
+- `sync-core` tunnel: a side link (Droidtop/tracker#113). `TunnelStream::side()` hands the app, once, a `SideLink`:
+  a second reliable byte stream through the same WireGuard session (inner TCP port 47614), beside the session
+  channel, as two queues so one thread can read while another writes. A remote stream's signaling runs on it while
+  its media rides `datagrams()`. An empty read is its end; dropping `outbound` closes it.
 
 ## [0.1.4]
 

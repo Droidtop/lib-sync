@@ -123,7 +123,16 @@ pub struct TunnelStream {
     eof: bool,
     timeout: Option<Duration>,
     datagrams: Option<Datagrams>,
-    side: Option<Box<TunnelStream>>,
+    side: Option<SideLink>,
+}
+
+/// The second reliable byte stream through the same tunnel ([`TunnelStream::side`]),
+/// as two queues, so one thread may read it while another writes. Bytes are sent
+/// in the order queued; an empty `Vec` from `inbound` is its end, and dropping
+/// `outbound` closes it.
+pub struct SideLink {
+    pub outbound: Sender<Vec<u8>>,
+    pub inbound: Receiver<Vec<u8>>,
 }
 
 /// Whole datagrams to and from the other end of the same tunnel, beside its
@@ -156,8 +165,8 @@ impl TunnelStream {
     /// once: a remote stream's signaling runs on it as it does on any stream,
     /// while this one carries the session channel (Droidtop/tracker#113). It
     /// ends with the tunnel, or when either end drops its side.
-    pub fn side(&mut self) -> Option<TunnelStream> {
-        self.side.take().map(|side| *side)
+    pub fn side(&mut self) -> Option<SideLink> {
+        self.side.take()
     }
 }
 
@@ -225,11 +234,13 @@ fn link_pair() -> (TunnelStream, Link) {
 
 fn stream_pair() -> (TunnelStream, AppSide) {
     let (mut stream, main) = link_pair();
-    let (side, side_link) = link_pair();
+    let (side_out, side_from_app) = mpsc::channel();
+    let (side_to_app, side_in) = mpsc::channel();
+    let side_link = Link { to_app: side_to_app, from_app: side_from_app };
     let (outbound, datagrams_from_app) = mpsc::channel();
     let (datagrams_to_app, inbound) = mpsc::channel();
     stream.datagrams = Some(Datagrams { outbound, inbound });
-    stream.side = Some(Box::new(side));
+    stream.side = Some(SideLink { outbound: side_out, inbound: side_in });
     (stream, AppSide { to_app: main.to_app, from_app: main.from_app, datagrams_to_app, datagrams_from_app, side: side_link })
 }
 
@@ -809,14 +820,15 @@ mod tests {
                 move |_, mut stream| {
                     thread::spawn(move || {
                         // The computer answers on the side link what it read there, then closes it.
-                        let mut side = stream.side().expect("the stream's side link");
-                        side.set_read_timeout(Some(Duration::from_secs(20)));
+                        let side = stream.side().expect("the stream's side link");
                         let key = DeviceKey::from_seed(&pc_seed).unwrap();
                         stream.set_read_timeout(Some(Duration::from_secs(20)));
                         let mut ch = Channel::accept(stream, &key, |p| *p == hh_id).unwrap();
-                        let mut got = vec![0u8; 5];
-                        side.read_exact(&mut got).unwrap();
-                        side.write_all(&[got.clone(), b" back".to_vec()].concat()).unwrap();
+                        let mut got = Vec::new();
+                        while got.len() < 5 {
+                            got.extend(side.inbound.recv_timeout(Duration::from_secs(20)).unwrap());
+                        }
+                        side.outbound.send([got, b" back".to_vec()].concat()).unwrap();
                         drop(side);
                         let _ = ch.recv();
                     });
@@ -827,14 +839,19 @@ mod tests {
             .unwrap();
         });
         let mut stream = connect(&handheld, &pc_id, &[target], Duration::from_secs(10)).unwrap();
-        let mut side = stream.side().unwrap();
+        let side = stream.side().unwrap();
         assert!(stream.side().is_none(), "taken once");
-        side.set_read_timeout(Some(Duration::from_secs(20)));
         stream.set_read_timeout(Some(Duration::from_secs(20)));
         let mut ch = Channel::connect(stream, &handheld, &pc_id).unwrap();
-        side.write_all(b"offer").unwrap();
+        side.outbound.send(b"offer".to_vec()).unwrap();
         let mut answer = Vec::new();
-        side.read_to_end(&mut answer).unwrap();
+        loop {
+            let got = side.inbound.recv_timeout(Duration::from_secs(20)).unwrap();
+            if got.is_empty() {
+                break;
+            }
+            answer.extend(got);
+        }
         assert_eq!(answer, b"offer back");
         ch.send(b"done").unwrap();
         stop.store(true, Ordering::Relaxed);
