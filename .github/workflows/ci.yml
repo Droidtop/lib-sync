@@ -50,7 +50,9 @@ jobs:
   # droidtop-agent, with lib-sync taken from this commit instead of its pinned tag: its main, or,
   # when droidtop-agent has a ci/ branch of the same name, that branch. A change to this library
   # that droidtop-agent must follow (a new kind in an enum it matches on, a changed signature) is
-  # one change in two repositories, and the two halves are built together here. No pins move:
+  # one change in two repositories, and the two halves are built together here. Once the library half
+  # is on main, .github/users-build-ref names droidtop-agent's branch until that half lands too, so main
+  # and its release build against it; it is emptied when the agent's half lands. No pins move:
   # which tags each program pins stays its own commit (Droidtop/tracker#867).
   droidtop-agent:
     runs-on: ubuntu-24.04
@@ -66,8 +68,13 @@ jobs:
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           ref=main
+          # The branch this library state goes with, named in .github/users-build-ref while droidtop-agent's half
+          # of a change has not landed (it keeps main and the release building once the library half has).
+          named="$(cat lib/.github/users-build-ref 2>/dev/null | tr -d '[:space:]' || true)"
           if [[ "$BRANCH" == ci/* ]] && git ls-remote --exit-code --heads https://github.com/Droidtop/droidtop-agent "refs/heads/$BRANCH" >/dev/null; then
             ref="$BRANCH"
+          elif [[ "$named" == ci/* ]] && git ls-remote --exit-code --heads https://github.com/Droidtop/droidtop-agent "refs/heads/$named" >/dev/null; then
+            ref="$named"
           fi
           echo "droidtop-agent: $ref"
           echo "ref=$ref" >> "$GITHUB_OUTPUT"

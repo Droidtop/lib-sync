@@ -34,7 +34,9 @@ cargo test --workspace
 
 CI (`.github/workflows/ci.yml`) runs those on Linux, Windows and macOS. It then builds and tests every
 program that uses this library against the commit (#867 D2): droidtop-agent's `main`, or its `ci/` branch of
-the same name when there is one, for a change the agent has to follow (both halves are built together). Work lands on `main` from `ci/*` branches
+the same name when there is one, for a change the agent has to follow (both halves are built together).
+Once such a change's library half is on `main`, `.github/users-build-ref` names the agent's branch until
+that half lands as well, so `main` and its release build against it; the file is emptied then. Work lands on `main` from `ci/*` branches
 once CI is green.
 
 ## Versions
