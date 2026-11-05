@@ -40,9 +40,14 @@ const RESPONDER_IP: Ipv4Addr = Ipv4Addr::new(10, 47, 61, 2);
 const INNER_PORT: u16 = crate::PORT;
 const WIRE: usize = 65_536 + 256;
 const TCP_BUFFER: usize = 256 * 1024;
+/// The side link carries signaling, a few kilobytes at a time.
+const SIDE_BUFFER: usize = 64 * 1024;
 /// The inner UDP port both ends use for datagrams beside the TCP link
 /// ([`TunnelStream::datagrams`]): a stream's media (Droidtop/tracker#113).
 const DATAGRAM_PORT: u16 = 47_613;
+/// The inner TCP port of the second link beside the session channel
+/// ([`TunnelStream::side`]): a remote stream's signaling (Droidtop/tracker#113).
+const SIDE_PORT: u16 = 47_614;
 /// Datagrams each way the inner UDP socket holds before it drops. The loop
 /// empties them every few milliseconds, so this covers bursts (a keyframe's
 /// packets), at about 350 KiB a session each way.
@@ -118,6 +123,7 @@ pub struct TunnelStream {
     eof: bool,
     timeout: Option<Duration>,
     datagrams: Option<Datagrams>,
+    side: Option<Box<TunnelStream>>,
 }
 
 /// Whole datagrams to and from the other end of the same tunnel, beside its
@@ -144,6 +150,14 @@ impl TunnelStream {
     /// The tunnel's datagrams, once: whoever takes them owns them.
     pub fn datagrams(&mut self) -> Option<Datagrams> {
         self.datagrams.take()
+    }
+
+    /// A second reliable byte stream through the same tunnel, beside this one,
+    /// once: a remote stream's signaling runs on it as it does on any stream,
+    /// while this one carries the session channel (Droidtop/tracker#113). It
+    /// ends with the tunnel, or when either end drops its side.
+    pub fn side(&mut self) -> Option<TunnelStream> {
+        self.side.take().map(|side| *side)
     }
 }
 
@@ -185,31 +199,38 @@ impl Write for TunnelStream {
     }
 }
 
-/// The loop's side of a [`TunnelStream`]: its bytes, and its datagrams.
+/// The loop's side of a [`TunnelStream`]: its bytes, its datagrams, and its side link.
 struct AppSide {
     to_app: Sender<Vec<u8>>,
     from_app: Receiver<Vec<u8>>,
     datagrams_to_app: Sender<Vec<u8>>,
     datagrams_from_app: Receiver<Vec<u8>>,
+    side: Link,
+}
+
+/// The loop's end of one byte stream.
+struct Link {
+    to_app: Sender<Vec<u8>>,
+    from_app: Receiver<Vec<u8>>,
+}
+
+fn link_pair() -> (TunnelStream, Link) {
+    let (to_loop, from_app) = mpsc::channel();
+    let (to_app, from_loop) = mpsc::channel();
+    (
+        TunnelStream { to_loop, from_loop, pending: Vec::new(), pos: 0, eof: false, timeout: None, datagrams: None, side: None },
+        Link { to_app, from_app },
+    )
 }
 
 fn stream_pair() -> (TunnelStream, AppSide) {
-    let (to_loop, from_app) = mpsc::channel();
-    let (to_app, from_loop) = mpsc::channel();
+    let (mut stream, main) = link_pair();
+    let (side, side_link) = link_pair();
     let (outbound, datagrams_from_app) = mpsc::channel();
     let (datagrams_to_app, inbound) = mpsc::channel();
-    (
-        TunnelStream {
-            to_loop,
-            from_loop,
-            pending: Vec::new(),
-            pos: 0,
-            eof: false,
-            timeout: None,
-            datagrams: Some(Datagrams { outbound, inbound }),
-        },
-        AppSide { to_app, from_app, datagrams_to_app, datagrams_from_app },
-    )
+    stream.datagrams = Some(Datagrams { outbound, inbound });
+    stream.side = Some(Box::new(side));
+    (stream, AppSide { to_app: main.to_app, from_app: main.from_app, datagrams_to_app, datagrams_from_app, side: side_link })
 }
 
 fn ip(a: Ipv4Addr) -> IpAddress {
@@ -233,6 +254,14 @@ struct Session {
     sockets: SocketSet<'static>,
     tcp: SocketHandle,
     udp: SocketHandle,
+    side: SocketHandle,
+    /// Bytes the app wrote to the side link that it has not taken yet, and
+    /// whether the app dropped its side or was told the other end closed it.
+    side_out: Vec<u8>,
+    side_gone: bool,
+    side_ended: bool,
+    /// The side link has been established, so a closed one is an end, not a handshake.
+    side_up: bool,
     initiator: bool,
     app: Option<AppSide>,
     outgoing: Vec<u8>,
@@ -259,6 +288,8 @@ impl Session {
         let mut datagrams = udp::Socket::new(slots(), slots());
         let _ = datagrams.bind(DATAGRAM_PORT);
         let udp = sockets.add(datagrams);
+        let side =
+            sockets.add(tcp::Socket::new(tcp::SocketBuffer::new(vec![0; SIDE_BUFFER]), tcp::SocketBuffer::new(vec![0; SIDE_BUFFER])));
         let mut session = Session {
             tunn,
             endpoint,
@@ -267,6 +298,11 @@ impl Session {
             sockets,
             tcp,
             udp,
+            side,
+            side_out: Vec::new(),
+            side_gone: false,
+            side_ended: false,
+            side_up: false,
             initiator,
             app: None,
             outgoing: Vec::new(),
@@ -276,7 +312,65 @@ impl Session {
             last_use: Clock::now(),
         };
         session.open();
+        session.open_side();
         session
+    }
+
+    /// Connects (initiator) or listens (responder) on the inner side link, once a session.
+    fn open_side(&mut self) {
+        let socket = self.sockets.get_mut::<tcp::Socket>(self.side);
+        if self.initiator {
+            let local = 49_152 + (OsRng.next_u32() % 16_000) as u16;
+            let _ = socket.connect(self.iface.context(), (ip(RESPONDER_IP), SIDE_PORT), local);
+        } else {
+            let _ = socket.listen(SIDE_PORT);
+        }
+    }
+
+    /// Moves the side link's bytes between the app and its socket. Nothing is
+    /// read from the socket before the app has its end, so nothing is lost.
+    fn pump_side(&mut self) {
+        let Some(app) = &self.app else { return };
+        loop {
+            match app.side.from_app.try_recv() {
+                Ok(data) => {
+                    self.side_out.extend_from_slice(&data);
+                    self.last_use = Clock::now();
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.side_gone = true;
+                    break;
+                }
+            }
+        }
+        let socket = self.sockets.get_mut::<tcp::Socket>(self.side);
+        if socket.may_send() && !self.side_out.is_empty() {
+            if let Ok(n) = socket.send_slice(&self.side_out) {
+                self.side_out.drain(..n);
+            }
+        }
+        let mut chunk = vec![0u8; 16 * 1024];
+        while socket.can_recv() {
+            match socket.recv_slice(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    let _ = app.side.to_app.send(chunk[..n].to_vec());
+                    self.last_use = Clock::now();
+                }
+            }
+        }
+        if socket.state() == tcp::State::Established {
+            self.side_up = true;
+        }
+        if self.side_up && !socket.may_recv() && !self.side_ended {
+            // The other end closed its side: end of stream for the app.
+            self.side_ended = true;
+            let _ = app.side.to_app.send(Vec::new());
+        }
+        if self.side_gone && self.side_out.is_empty() {
+            socket.close();
+        }
     }
 
     /// Connects (initiator) or listens (responder) on the inner TCP socket.
@@ -402,6 +496,7 @@ impl Session {
             let socket = self.sockets.get_mut::<tcp::Socket>(self.tcp);
             socket.close();
         }
+        self.pump_side();
         self.iface.poll(Instant::now(), &mut self.device, &mut self.sockets);
         while let Some(packet) = self.device.tx.pop_front() {
             if let TunnResult::WriteToNetwork(data) = self.tunn.encapsulate(&packet, out) {
@@ -689,6 +784,59 @@ mod tests {
             ch.send(call).unwrap();
             assert_eq!(ch.recv().unwrap(), call);
         }
+        stop.store(true, Ordering::Relaxed);
+        server.join().unwrap();
+    }
+
+    /// A second byte stream beside the session channel, as a remote stream's
+    /// signaling uses it (Droidtop/tracker#113): bytes each way, then its end.
+    #[test]
+    fn a_side_link_carries_bytes_beside_the_stream() {
+        let pc = DeviceKey::generate();
+        let pc_id = pc.peer_id();
+        let handheld = DeviceKey::generate();
+        let hh_id = handheld.peer_id();
+        let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let target = SocketAddr::from(([127, 0, 0, 1], udp.local_addr().unwrap().port()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_server = stop.clone();
+        let pc_seed = pc.seed();
+        let server = thread::spawn(move || {
+            serve(
+                &pc,
+                udp,
+                move || vec![hh_id],
+                move |_, mut stream| {
+                    thread::spawn(move || {
+                        // The computer answers on the side link what it read there, then closes it.
+                        let mut side = stream.side().expect("the stream's side link");
+                        side.set_read_timeout(Some(Duration::from_secs(20)));
+                        let key = DeviceKey::from_seed(&pc_seed).unwrap();
+                        stream.set_read_timeout(Some(Duration::from_secs(20)));
+                        let mut ch = Channel::accept(stream, &key, |p| *p == hh_id).unwrap();
+                        let mut got = vec![0u8; 5];
+                        side.read_exact(&mut got).unwrap();
+                        side.write_all(&[got.clone(), b" back".to_vec()].concat()).unwrap();
+                        drop(side);
+                        let _ = ch.recv();
+                    });
+                },
+                &stop_server,
+                &mut NoHooks,
+            )
+            .unwrap();
+        });
+        let mut stream = connect(&handheld, &pc_id, &[target], Duration::from_secs(10)).unwrap();
+        let mut side = stream.side().unwrap();
+        assert!(stream.side().is_none(), "taken once");
+        side.set_read_timeout(Some(Duration::from_secs(20)));
+        stream.set_read_timeout(Some(Duration::from_secs(20)));
+        let mut ch = Channel::connect(stream, &handheld, &pc_id).unwrap();
+        side.write_all(b"offer").unwrap();
+        let mut answer = Vec::new();
+        side.read_to_end(&mut answer).unwrap();
+        assert_eq!(answer, b"offer back");
+        ch.send(b"done").unwrap();
         stop.store(true, Ordering::Relaxed);
         server.join().unwrap();
     }
