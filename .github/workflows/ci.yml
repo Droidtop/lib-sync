@@ -47,6 +47,29 @@ jobs:
         if: success() || failure()
         run: cargo test --workspace --no-fail-fast
 
+  # The library's public interface stays compatible within a version (Droidtop/tracker#867, owner 2026-11-04: "I
+  # should be able to bump the version number and immediately get the benefit"). cargo-semver-checks compares this
+  # commit with the last release: a breaking change fails unless the version says so (in 0.x, a new minor) and the
+  # CHANGELOG says what broke.
+  semver:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: taiki-e/install-action@0e09747a63ae497bf945b3dcaf38fef0050d0109 # v2.62.0
+        with:
+          tool: cargo-semver-checks@0.51.0
+      - name: No breaking change without a version that says so
+        run: |
+          set -eu
+          last="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD 2>/dev/null || true)"
+          if [ -z "$last" ]; then echo "nothing released yet; nothing to compare"; exit 0; fi
+          echo "comparing with $last"
+          cargo semver-checks check-release --workspace --baseline-rev "$last"
+
   # droidtop-agent, with lib-sync taken from this commit instead of its pinned tag: its main, or,
   # when droidtop-agent has a ci/ branch of the same name, that branch. A change to this library
   # that droidtop-agent must follow (a new kind in an enum it matches on, a changed signature) is
@@ -123,7 +146,7 @@ jobs:
   # in the root Cargo.toml (and the CHANGELOG) in the change that needs it.
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [test, droidtop-agent]
+    needs: [test, droidtop-agent, semver]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

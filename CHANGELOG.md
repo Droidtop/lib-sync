@@ -1,7 +1,13 @@
 # Changelog
 
 All notable changes to lib-sync. Versions follow [Semantic Versioning](https://semver.org/)
-(0.x releases may change anything).
+(in 0.x, only a new minor version may break the interface; CI's `semver` job enforces it).
+
+## [Unreleased]
+
+### Added
+- CI's `semver` job: `cargo-semver-checks` against the last release, so a breaking change fails unless its version and
+  this CHANGELOG say so (Droidtop/tracker#867).
 
 ## [0.1.2]
 
