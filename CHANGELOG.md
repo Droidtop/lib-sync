@@ -5,7 +5,18 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.1.3]
+
 ### Added
+- `sync-remote`, a new crate: one client for the person's own shares and cloud storage (Droidtop/tracker#573, design
+  D1). The `Remote` interface (list, stat, read, ranged read, a write that lands in one step through a temporary name,
+  rename, remove one file, make folders), checked share paths (`RemotePath`: no `..`, `.`, empty segment or
+  backslash), and two backends: `LocalFolder` and `WebDav` (PROPFIND, GET with Range, PUT, MOVE, DELETE, MKCOL; Basic
+  sign-in over https only unless the person allows plain http for that share; no redirects followed; a timeout on
+  every request). CI tests WebDAV against a real server (wsgidav).
+- `sync-core`: the store-and-forward mailbox over any share (Droidtop/tracker#800 item 3): `mailbox::post_to`,
+  `collect_from` and `inbox_path` take a `Remote`. `post` and `collect` keep their signatures and behaviour and go
+  through `LocalFolder`; a letter is now written to `.<name>.<tag>.part` before its rename, as every `Remote` write is.
 - CI's `semver` job: `cargo-semver-checks` against the last release, so a breaking change fails unless its version and
   this CHANGELOG say so (Droidtop/tracker#867).
 

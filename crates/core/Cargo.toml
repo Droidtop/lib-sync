@@ -30,6 +30,8 @@ rand_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+# The store-and-forward share (src/mailbox.rs) is any of sync-remote's backends.
+sync-remote.workspace = true
 # Rendezvous away from the LAN (src/rendezvous.rs): Syncthing's global
 # discovery and STUN, in the crate windowcast and droidtop-agent share.
 windowcast-rendezvous.workspace = true

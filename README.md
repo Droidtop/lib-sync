@@ -8,6 +8,7 @@ each program has its own scaffold and pins a tagged release of each library it u
 | `sync-core` | [`crates/core`](crates/core) | identity, pairing, the session channel, the protocol, the library change log and the save-sync rules |
 | `sync-store` | [`crates/store`](crates/store) | this computer's state on disk: identity shared with windowcast, paired devices, settings, the library |
 | `sync-pair` | [`crates/pair`](crates/pair) | pairing a device: typing the code the other shows, or showing one |
+| `sync-remote` | [`crates/remote`](crates/remote) | the person's own shares and cloud storage behind one interface, `Remote`: a local folder and WebDAV so far (Droidtop/tracker#573) |
 
 Used by: droidtop-agent (and through it droidtop's `libdroidtop_agent.so`); Pythia once its native module moves on.
 

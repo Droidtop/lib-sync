@@ -43,6 +43,43 @@ jobs:
       - name: Clippy
         if: success() || failure()
         run: cargo clippy --workspace --all-targets --keep-going -- -D warnings
+      # sync-remote's WebDAV backend against a real WebDAV server (wsgidav), on Linux; crates/remote/tests/webdav_live.rs.
+      # The user and password are this test server's own, made up here.
+      - name: Start a WebDAV server for sync-remote's tests
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          python3 -m venv "$RUNNER_TEMP/dav-venv"
+          "$RUNNER_TEMP/dav-venv/bin/pip" install -q wsgidav==4.3.3 cheroot==10.0.1
+          mkdir -p "$RUNNER_TEMP/dav-root"
+          cat > "$RUNNER_TEMP/dav.yaml" <<EOF
+          host: 127.0.0.1
+          port: 8089
+          provider_mapping:
+            "/dav": "$RUNNER_TEMP/dav-root"
+          http_authenticator:
+            accept_basic: true
+            accept_digest: false
+            default_to_digest: false
+          simple_dc:
+            user_mapping:
+              "*":
+                "tester":
+                  password: "test-only-password"
+          verbose: 1
+          EOF
+          "$RUNNER_TEMP/dav-venv/bin/wsgidav" --config "$RUNNER_TEMP/dav.yaml" > "$RUNNER_TEMP/dav.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null -u tester:test-only-password http://127.0.0.1:8089/dav/; then break; fi
+            sleep 1
+          done
+          curl -fsS -o /dev/null -u tester:test-only-password http://127.0.0.1:8089/dav/
+          {
+            echo "SYNC_REMOTE_WEBDAV_URL=http://127.0.0.1:8089/dav/"
+            echo "SYNC_REMOTE_WEBDAV_USER=tester"
+            echo "SYNC_REMOTE_WEBDAV_PASSWORD=test-only-password"
+            echo "SYNC_REMOTE_WEBDAV_REQUIRED=1"
+          } >> "$GITHUB_ENV"
       - name: Test
         if: success() || failure()
         run: cargo test --workspace --no-fail-fast

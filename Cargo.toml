@@ -1,15 +1,17 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/store", "crates/pair"]
+members = ["crates/core", "crates/store", "crates/pair", "crates/remote"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/Droidtop/lib-sync"
 rust-version = "1.89"
 
 [workspace.dependencies]
+# This workspace's share client (crates/remote): the mailbox's share is any of its backends.
+sync-remote = { path = "crates/remote", version = "0.1.3" }
 # windowcast's device identity and pairing, used as they are (docs/DESIGN.md
 # section 3). Pinned by commit; both crates are GPL-3.0-only, which is why
 # this workspace is too.

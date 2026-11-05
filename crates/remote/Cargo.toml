@@ -1,0 +1,18 @@
+[package]
+name = "sync-remote"
+description = "One client for the person's own shares and cloud storage: a folder on this computer, WebDAV, and more backends to come"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+rand_core.workspace = true
+# WebDAV is HTTP (src/webdav.rs): ureq with rustls on ring, the same TLS stack as the session channel.
+ureq.workspace = true
+roxmltree.workspace = true
+percent-encoding = "2"
+httpdate = "1"
+base64 = "0.22"
