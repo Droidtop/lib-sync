@@ -46,6 +46,13 @@ jobs:
       - name: Test
         if: success() || failure()
         run: cargo test --workspace --no-fail-fast
+      # sync-core with lib-net's share client (its net-remote feature, Droidtop/tracker#573): off by default, so the
+      # steps above never build it. Linux only: net-remote's own CI covers its backends on the platforms it targets.
+      - name: Clippy and test with the net-remote feature
+        if: runner.os == 'Linux' && (success() || failure())
+        run: |
+          cargo clippy -p sync-core --features net-remote --all-targets -- -D warnings
+          cargo test -p sync-core --features net-remote --no-fail-fast
 
   # The oldest Rust these crates support, rust-version in Cargo.toml: Pythia builds them with Ubuntu's rustc-1.85, as
   # Launchpad does. The checked-in Cargo.lock is resolved for stable, so this resolves one the way a consumer's would:

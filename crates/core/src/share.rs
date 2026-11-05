@@ -129,9 +129,81 @@ impl Share for Folder {
     }
 }
 
+/// A lib-net share (WebDAV, SFTP, S3 and the backends to come) as a [`Share`]: lib-sync's store and
+/// forward and save sets through it, with no folder mirrored on this device (owner, 2026-11-05, on
+/// Droidtop/tracker#573: "A share can be a backend for a sync").
+#[cfg(feature = "net-remote")]
+pub struct RemoteShare<'a>(pub &'a dyn net_remote::Remote);
+
+#[cfg(feature = "net-remote")]
+impl RemoteShare<'_> {
+    fn path(path: &str) -> io::Result<net_remote::RemotePath> {
+        net_remote::RemotePath::new(check(path)?).map_err(io::Error::from)
+    }
+}
+
+#[cfg(feature = "net-remote")]
+impl Share for RemoteShare<'_> {
+    fn files(&self, dir: &str) -> io::Result<Vec<String>> {
+        match self.0.list(&Self::path(dir)?) {
+            Ok(entries) => Ok(entries.into_iter().filter(|e| !e.is_dir && !is_partial(&e.name)).map(|e| e.name).collect()),
+            Err(net_remote::Error::NotFound(_)) => Ok(Vec::new()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn read(&self, path: &str) -> io::Result<Vec<u8>> {
+        self.0.read(&Self::path(path)?).map_err(io::Error::from)
+    }
+
+    fn write(&self, path: &str, bytes: &[u8]) -> io::Result<()> {
+        self.0.write(&Self::path(path)?, bytes).map_err(io::Error::from)
+    }
+
+    fn remove(&self, path: &str) -> io::Result<()> {
+        self.0.remove(&Self::path(path)?).map_err(io::Error::from)
+    }
+
+    fn make_dirs(&self, dir: &str) -> io::Result<()> {
+        self.0.make_dirs(&Self::path(dir)?).map_err(io::Error::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "net-remote")]
+    #[test]
+    fn a_lib_net_share_carries_letters_and_save_sets() {
+        use crate::keys::DeviceKey;
+        use crate::mailbox;
+        let root = std::env::temp_dir().join(format!("dta-remote-share-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let folder = net_remote::LocalFolder::new(&root);
+        let share = RemoteShare(&folder);
+        let a = DeviceKey::generate();
+        let b = DeviceKey::generate();
+        let posted = mailbox::post_via(&share, &a, &b.peer_id(), b"through lib-net").unwrap();
+        // lib-net writes through a temporary name too, and listing skips it.
+        fs::write(share_path(&root, &mailbox::inbox_path(&b.peer_id())).join(".x.dtmsg.ab12.part"), b"half").unwrap();
+        let (letters, failed) = mailbox::collect_via(&share, &b, |p| *p == a.peer_id()).unwrap();
+        assert!(failed.is_empty());
+        assert_eq!(letters.len(), 1);
+        assert_eq!(letters[0].payload, b"through lib-net");
+        assert_eq!(letters[0].path, posted);
+        share.remove(&posted).unwrap();
+        assert!(mailbox::collect_via(&share, &b, |_| true).unwrap().0.is_empty());
+        assert!(share.files("droidtop-agent/nobody").unwrap().is_empty());
+        assert!(share.read("../outside").is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "net-remote")]
+    fn share_path(root: &Path, path: &str) -> PathBuf {
+        path.split('/').fold(root.to_path_buf(), |p, s| p.join(s))
+    }
 
     #[test]
     fn paths_stay_inside_the_share() {
