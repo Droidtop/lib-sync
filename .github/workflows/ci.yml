@@ -6,8 +6,8 @@ name: CI
 #
 # Programs that use lib-sync:
 # - droidtop-agent: its workspace, built and tested on Linux.
-# - droidtop: through droidtop-agent's crates/android (libdroidtop_agent.so), built here for both
-#   Android ABIs the way droidtop-agent's CI builds it.
+# - droidtop: its library (libdroidtop_agent.so, droidtop's native/), built here for both Android
+#   ABIs against this commit.
 # Pythia joins when its native module moves onto the libraries (#867 step 1).
 on:
   push:
@@ -120,8 +120,16 @@ jobs:
             --config 'patch."https://github.com/Droidtop/lib-sync".sync-store.path="../lib/crates/store"' \
             --config 'patch."https://github.com/Droidtop/lib-sync".sync-pair.path="../lib/crates/pair"' \
             test --workspace --no-fail-fast
+      # droidtop's library moved from droidtop-agent's crates/android into droidtop's own native/
+      # (droidtop-agent 1be302f, Droidtop/tracker#867): it is built from there, against this commit.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Droidtop/droidtop
+          path: droidtop
+          sparse-checkout: native
+          persist-credentials: false
       - name: Build droidtop's library (libdroidtop_agent.so) for arm64-v8a and x86_64
-        working-directory: agent
+        working-directory: droidtop/native
         shell: bash
         run: |
           set -eu
@@ -134,10 +142,10 @@ jobs:
           export AR_aarch64_linux_android="$bin/llvm-ar"
           export AR_x86_64_linux_android="$bin/llvm-ar"
           for target in aarch64-linux-android x86_64-linux-android; do
-            cargo --config 'patch."https://github.com/Droidtop/lib-sync".sync-core.path="../lib/crates/core"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-store.path="../lib/crates/store"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-pair.path="../lib/crates/pair"' \
-              build --release -p droidtop-agent-android --target "$target"
+            cargo --config 'patch."https://github.com/Droidtop/lib-sync".sync-core.path="../../lib/crates/core"' \
+            --config 'patch."https://github.com/Droidtop/lib-sync".sync-store.path="../../lib/crates/store"' \
+            --config 'patch."https://github.com/Droidtop/lib-sync".sync-pair.path="../../lib/crates/pair"' \
+              build --release --lib --target "$target"
           done
           ls -l target/*-linux-android/release/libdroidtop_agent.so
 
