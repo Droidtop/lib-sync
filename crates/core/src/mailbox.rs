@@ -4,11 +4,14 @@
 //! `droidtop-agent/<peer id>/inbox/`; the peer opens, applies and removes
 //! them when they arrive. The share only ever holds ciphertext.
 //!
+//! The share is any [`Share`]: a folder on this computer ([`Folder`], what [`post`] and [`collect`]
+//! use), or a share client's share through its own implementation of the trait ([`post_via`],
+//! [`collect_via`]; Droidtop/tracker#573, #800 item 3).
+//!
 //! Sealing: XChaCha20-Poly1305 under a key derived from X25519 between the
 //! two identities, a random 24-byte nonce per message, and the sender, the
 //! recipient and the format in the associated data.
 
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -23,6 +26,7 @@ use crate::keys::{short, DeviceKey, PeerId};
 use crate::library::Change;
 use crate::manifest::FileEntry;
 use crate::proto::GameRef;
+use crate::share::{Folder, Share};
 use crate::{error::protocol, Error, Result};
 
 const MAGIC: &[u8; 4] = b"DTM1";
@@ -81,18 +85,27 @@ pub fn inbox(share: &Path, peer: &PeerId) -> PathBuf {
     share.join("droidtop-agent").join(peer.to_hex()).join("inbox")
 }
 
-/// Leaves a sealed message for [`to`] in [`share`]; written under a
-/// temporary name and renamed, so a sync tool never carries half of it.
+/// The folder messages for [`peer`] go to, as a path inside a share.
+pub fn inbox_path(peer: &PeerId) -> String {
+    format!("droidtop-agent/{}/inbox", peer.to_hex())
+}
+
+/// Leaves a sealed message for [`to`] in the folder [`share`] ([`post_via`]).
 pub fn post(share: &Path, key: &DeviceKey, to: &PeerId, payload: &[u8]) -> Result<PathBuf> {
-    let dir = inbox(share, to);
-    fs::create_dir_all(&dir)?;
+    let folder = Folder::new(share);
+    let posted = post_via(&folder, key, to, payload)?;
+    Ok(folder.local_path(&posted)?)
+}
+
+/// Leaves a sealed message for [`to`] in [`share`], written in one step so a sync tool or a reader
+/// never takes half of it; the path it was left at.
+pub fn post_via(share: &dyn Share, key: &DeviceKey, to: &PeerId, payload: &[u8]) -> Result<String> {
+    let dir = inbox_path(to);
+    share.make_dirs(&dir)?;
     let mut tag = [0u8; 6];
     OsRng.fill_bytes(&mut tag);
-    let name = format!("{}-{}-{}.{EXT}", short(&key.peer_id()), crate::library::now_ms(), crate::hex::encode(&tag));
-    let tmp = dir.join(format!(".{name}.part"));
-    fs::write(&tmp, seal(key, to, payload)?)?;
-    let path = dir.join(name);
-    fs::rename(&tmp, &path)?;
+    let path = format!("{dir}/{}-{}-{}.{EXT}", short(&key.peer_id()), crate::library::now_ms(), crate::hex::encode(&tag));
+    share.write(&path, &seal(key, to, payload)?)?;
     Ok(path)
 }
 
@@ -145,23 +158,47 @@ pub struct Letter {
     pub path: PathBuf,
 }
 
+/// The messages waiting for [`key`]'s device in the folder [`share`], oldest first ([`collect_via`]).
+pub fn collect(share: &Path, key: &DeviceKey, trusted: impl Fn(&PeerId) -> bool) -> io::Result<Collected> {
+    let folder = Folder::new(share);
+    let (letters, failed) = collect_via(&folder, key, trusted)?;
+    let mut opened = Vec::new();
+    for l in letters {
+        opened.push(Letter { from: l.from, payload: l.payload, path: folder.local_path(&l.path)? });
+    }
+    let mut unopened = Vec::new();
+    for (path, why) in failed {
+        unopened.push((folder.local_path(&path)?, why));
+    }
+    Ok((opened, unopened))
+}
+
+/// The letters opened from a share, and the files left unopened with the reason.
+pub type CollectedVia = (Vec<ShareLetter>, Vec<(String, String)>);
+
+/// One message waiting in this device's inbox on a share. The caller removes [`path`] from the
+/// share once it has applied the letter.
+pub struct ShareLetter {
+    pub from: PeerId,
+    pub payload: Vec<u8>,
+    pub path: String,
+}
+
 /// The messages waiting for [`key`]'s device in [`share`], oldest first.
 /// Messages it cannot open are left where they are (a sync tool may still
 /// be writing them) and reported in the second list.
-pub fn collect(share: &Path, key: &DeviceKey, trusted: impl Fn(&PeerId) -> bool) -> io::Result<Collected> {
-    let dir = inbox(share, &key.peer_id());
-    let mut names: Vec<PathBuf> = match fs::read_dir(&dir) {
-        Ok(read) => read.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == EXT)).collect(),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((Vec::new(), Vec::new())),
-        Err(e) => return Err(e),
-    };
+pub fn collect_via(share: &dyn Share, key: &DeviceKey, trusted: impl Fn(&PeerId) -> bool) -> io::Result<CollectedVia> {
+    let dir = inbox_path(&key.peer_id());
+    let suffix = format!(".{EXT}");
+    let mut names: Vec<String> = share.files(&dir)?.into_iter().filter(|n| n.ends_with(&suffix)).collect();
     names.sort();
     let mut letters = Vec::new();
     let mut failed = Vec::new();
-    for path in names {
-        let bytes = fs::read(&path)?;
+    for name in names {
+        let path = format!("{dir}/{name}");
+        let bytes = share.read(&path)?;
         match open(key, &bytes, &trusted) {
-            Ok((from, payload)) => letters.push(Letter { from, payload, path }),
+            Ok((from, payload)) => letters.push(ShareLetter { from, payload, path }),
             Err(e) => failed.push((path, e.to_string())),
         }
     }
@@ -171,6 +208,7 @@ pub fn collect(share: &Path, key: &DeviceKey, trusted: impl Fn(&PeerId) -> bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn sealed_messages_open_only_for_their_recipient() {
@@ -202,6 +240,30 @@ mod tests {
         got.sort();
         assert_eq!(got, vec![b"one".to_vec(), b"two".to_vec()]);
         let _ = fs::remove_dir_all(&share);
+    }
+
+    #[test]
+    fn letters_on_any_share_are_collected_and_half_written_ones_are_not() {
+        let root = std::env::temp_dir().join(format!("dta-share-via-{}", std::process::id()));
+        let share = Folder::new(&root);
+        let a = DeviceKey::generate();
+        let b = DeviceKey::generate();
+        let posted = post_via(&share, &a, &b.peer_id(), b"one").unwrap();
+        assert!(posted.starts_with(&inbox_path(&b.peer_id())));
+        // A file a sync tool is still writing, and one this device can't open.
+        let inbox = share.local_path(&inbox_path(&b.peer_id())).unwrap();
+        fs::write(inbox.join(".x.dtmsg.abc.part"), b"half").unwrap();
+        fs::write(inbox.join("junk.dtmsg"), b"junk").unwrap();
+        let (letters, failed) = collect_via(&share, &b, |p| *p == a.peer_id()).unwrap();
+        assert_eq!(letters.len(), 1);
+        assert_eq!(letters[0].payload, b"one");
+        assert_eq!(letters[0].path, posted);
+        assert_eq!(failed.len(), 1);
+        assert!(failed[0].0.ends_with("/junk.dtmsg"));
+        share.remove(&posted).unwrap();
+        // Nothing for a device with no inbox yet.
+        assert!(collect_via(&share, &a, |_| true).unwrap().0.is_empty());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
