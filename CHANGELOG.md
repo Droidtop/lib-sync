@@ -8,6 +8,14 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ## [0.1.4]
 
 ### Added
+- `sync-core`: a game's saves kept on a share (`sharesaves::sync_with_share`, Droidtop/tracker#573). The same rule as
+  a live sync (one side changed wins; both changed is `Outcome::Conflict`, settled by the person's choice; the side
+  overwritten keeps a copy), with the share as the other side, so devices on one share keep each other's saves with
+  no computer. On the share: `droidtop/saves/<digest of the game key>/` with `blobs/<digest>` (written once, never
+  changed), `set.json` (written last, in one step) and `sets/` (a replaced set that had changed too). Locked
+  (`ShareSaveRequest::sealed`): every blob and set sealed with the agent's sealing to this device's key, so the share
+  holds ciphertext only; a set another device locked is refused and changes nothing. A share with no set never makes
+  a device delete its saves: its own set is written there.
 - `sync-core`: store and forward over any share (Droidtop/tracker#573, #800 item 3). `share::Share` names what sync
   needs from a share (list a folder's finished files, read, write in one step, remove one file, make folders), with
   `share::Folder` for a folder on this computer. A share client (lib-net's `net-remote`) is one more implementation

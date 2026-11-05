@@ -55,7 +55,7 @@ pub enum Plan {
     },
 }
 
-fn copy_from(side: Side, here: &Manifest, there: &Manifest, keep: bool) -> Plan {
+pub(crate) fn copy_from(side: Side, here: &Manifest, there: &Manifest, keep: bool) -> Plan {
     let (src, dst) = match side {
         Side::Here => (here, there),
         Side::There => (there, here),
@@ -124,7 +124,7 @@ pub struct SaveSet {
     pub newest_ms: i64,
 }
 
-fn save_set(device: &str, m: &Manifest) -> SaveSet {
+pub(crate) fn save_set(device: &str, m: &Manifest) -> SaveSet {
     SaveSet { device: device.to_string(), files: m.len(), newest_ms: newest_ms(m) }
 }
 

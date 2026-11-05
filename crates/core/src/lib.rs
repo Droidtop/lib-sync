@@ -32,6 +32,7 @@ pub mod saves;
 pub mod savesync;
 pub mod server;
 pub mod share;
+pub mod sharesaves;
 pub mod sync;
 pub mod tunnel;
 
