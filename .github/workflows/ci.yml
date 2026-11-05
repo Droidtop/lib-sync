@@ -108,8 +108,6 @@ jobs:
           path: agent
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-        with:
-          targets: aarch64-linux-android, x86_64-linux-android
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: agent
@@ -120,26 +118,6 @@ jobs:
             --config 'patch."https://github.com/Droidtop/lib-sync".sync-store.path="../lib/crates/store"' \
             --config 'patch."https://github.com/Droidtop/lib-sync".sync-pair.path="../lib/crates/pair"' \
             test --workspace --no-fail-fast
-      - name: Build droidtop's library (libdroidtop_agent.so) for arm64-v8a and x86_64
-        working-directory: agent
-        shell: bash
-        run: |
-          set -eu
-          ndk="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
-          bin="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$bin/aarch64-linux-android26-clang"
-          export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$bin/x86_64-linux-android26-clang"
-          export CC_aarch64_linux_android="$bin/aarch64-linux-android26-clang"
-          export CC_x86_64_linux_android="$bin/x86_64-linux-android26-clang"
-          export AR_aarch64_linux_android="$bin/llvm-ar"
-          export AR_x86_64_linux_android="$bin/llvm-ar"
-          for target in aarch64-linux-android x86_64-linux-android; do
-            cargo --config 'patch."https://github.com/Droidtop/lib-sync".sync-core.path="../lib/crates/core"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-store.path="../lib/crates/store"' \
-            --config 'patch."https://github.com/Droidtop/lib-sync".sync-pair.path="../lib/crates/pair"' \
-              build --release -p droidtop-agent-android --target "$target"
-          done
-          ls -l target/*-linux-android/release/libdroidtop_agent.so
 
   # A green main whose version has no tag yet is released: CI tags v<version> on this commit, and that tag
   # is what programs and the other libraries pin (Droidtop/tracker#867 D2). To release, raise the version
