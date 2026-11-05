@@ -5,6 +5,15 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.1.5]
+
+### Changed
+- Builds with Rust 1.85 again (`rust-version` 1.89 → 1.85). Pythia builds these crates with Ubuntu's rustc-1.85, as
+  Launchpad does; 1.89 came from droidtop-agent b5e7094, only for `File::lock`. The store's lock is now fs4's
+  `FileExt::lock` (the same operating system lock: flock on Unix, LockFileEx on Windows), and two
+  `is_multiple_of` (1.87) are `%`. A new `msrv` CI job checks the workspace with 1.85, resolving dependencies to
+  versions 1.85 can build, as a consumer's lock would.
+
 ## [0.1.4]
 
 ### Added

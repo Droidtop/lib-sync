@@ -3,11 +3,13 @@ resolver = "2"
 members = ["crates/core", "crates/store", "crates/pair"]
 
 [workspace.package]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/Droidtop/lib-sync"
-rust-version = "1.89"
+# Pythia builds these crates with Ubuntu's rustc-1.85, as Launchpad does (its CI checks it), so
+# nothing here may need a newer Rust; the msrv job checks it.
+rust-version = "1.85"
 
 [workspace.dependencies]
 # windowcast's device identity and pairing, used as they are (docs/DESIGN.md

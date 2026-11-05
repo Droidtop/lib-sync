@@ -329,7 +329,7 @@ impl FileLock {
     /// file system without locks): the caller goes on without, as a write to a folder that refuses locks fails the same way.
     fn take(of: &Path) -> io::Result<FileLock> {
         let file = fs::OpenOptions::new().write(true).create(true).truncate(false).open(of.with_extension("lock"))?;
-        file.lock()?;
+        fs4::FileExt::lock(&file)?;
         Ok(FileLock(file))
     }
 }
@@ -337,7 +337,7 @@ impl FileLock {
 impl Drop for FileLock {
     fn drop(&mut self) {
         // Unlocking can only fail for a file already closed; closing the file releases the lock in any case.
-        let _ = self.0.unlock();
+        let _ = fs4::FileExt::unlock(&self.0);
     }
 }
 

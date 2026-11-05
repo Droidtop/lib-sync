@@ -47,6 +47,25 @@ jobs:
         if: success() || failure()
         run: cargo test --workspace --no-fail-fast
 
+  # The oldest Rust these crates support, rust-version in Cargo.toml: Pythia builds them with Ubuntu's rustc-1.85, as
+  # Launchpad does. The checked-in Cargo.lock is resolved for stable, so this resolves one the way a consumer's would:
+  # with cargo's MSRV-aware resolver, which picks dependency versions 1.85 can build.
+  msrv:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: "1.85"
+      - name: Check with Rust 1.85
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: |
+          cargo generate-lockfile
+          cargo check --workspace --all-targets
+
   # The library's public interface stays compatible within a version (Droidtop/tracker#867, owner 2026-11-04: "I
   # should be able to bump the version number and immediately get the benefit"). cargo-semver-checks compares this
   # commit with the last release: a breaking change fails unless the version says so (in 0.x, a new minor) and the
