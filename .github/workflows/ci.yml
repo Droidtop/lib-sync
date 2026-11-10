@@ -132,6 +132,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: agent
+      # droidtop-agent's stream crate links windowcast's host, which links libpam (as droidtop-agent's own CI installs).
+      - name: Install libpam for the stream test
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
       - name: Build and test droidtop-agent against this commit
         run: lib/scripts/with-this-library.sh agent test --workspace --no-fail-fast
 
