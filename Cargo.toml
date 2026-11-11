@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/store", "crates/pair"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/Droidtop/lib-sync"
@@ -15,6 +15,10 @@ rust-version = "1.85"
 # age (age-encryption.org/v1) for what droidtop locks on the person's shares (sync-core::locked, Droidtop/tracker#573):
 # a documented format the person can open with the age or rage tools, without droidtop.
 age = { version = "0.12", default-features = false }
+# age 0.12 pulls ml-kem. ml-kem 0.2.1 asks for kem ^0.3.0-pre.0, which kem 0.3.0 (final, a changed trait) satisfies,
+# and then ml-kem does not compile; 0.2.2 and later pin kem =0.3.0-pre.0. A consumer resolving afresh (droidtop's
+# native library on this commit) got 0.2.1, so the floor is stated here. Not used directly.
+ml-kem = { version = "0.2.2", default-features = false }
 # lib-net's share client, for store and forward through a WebDAV, SFTP or S3 share (sync-core's net-remote feature,
 # Droidtop/tracker#573). Optional: a program that does not ask for it never builds it, so Pythia's Rust 1.85 build is
 # untouched: the 1.85 floor holds for everything else (net-remote needs 1.89).

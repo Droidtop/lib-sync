@@ -1943,13 +1943,14 @@ dependencies = [
 
 [[package]]
 name = "sync-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "age",
  "boringtun",
  "chacha20poly1305",
  "ed25519-dalek",
  "hkdf",
+ "ml-kem",
  "net-remote",
  "rand_core",
  "rcgen",
@@ -1968,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "sync-pair"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "if-addrs",
  "sync-core",
@@ -1977,7 +1978,7 @@ dependencies = [
 
 [[package]]
 name = "sync-store"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "dirs",
  "fs4",

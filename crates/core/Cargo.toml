@@ -36,6 +36,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 age.workspace = true
+ml-kem.workspace = true
 # Rendezvous away from the LAN (src/rendezvous.rs): Syncthing's global
 # discovery and STUN, in the crate windowcast and droidtop-agent share.
 windowcast-rendezvous.workspace = true

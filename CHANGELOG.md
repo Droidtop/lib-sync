@@ -5,6 +5,13 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+## [0.2.1]
+
+### Fixed
+- A consumer that resolves lib-sync's dependencies afresh builds again: sync-core asks for ml-kem 0.2.2 or later.
+  ml-kem 0.2.1 (through age 0.12) accepts kem 0.3.0, whose changed trait it does not compile against; droidtop's
+  native library built on lib-sync 0.2.0 failed there (E0437, `type Error is not a member of trait kem::Encapsulate`).
+
 ## [0.2.0]
 
 ### Added
