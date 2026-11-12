@@ -7,9 +7,10 @@ version = "0.2.1"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/Droidtop/lib-sync"
-# Pythia builds these crates with Ubuntu's rustc-1.85, as Launchpad does (its CI checks it), so
-# nothing here may need a newer Rust; the msrv job checks it.
-rust-version = "1.85"
+# Pythia builds these crates with Ubuntu's rustc-1.91, the newest versioned rustc in noble-updates and jammy-updates, as
+# Launchpad does, so nothing here may need a newer Rust; the msrv job checks it. It was 1.85 until age's ML-KEM stack
+# (crypto-bigint 0.7) needed 1.87 (owner, 2026-11-12: newest versions, raise the floor to 1.91).
+rust-version = "1.91"
 
 [workspace.dependencies]
 # age (age-encryption.org/v1) for what droidtop locks on the person's shares (sync-core::locked, Droidtop/tracker#573):
@@ -18,9 +19,8 @@ rust-version = "1.85"
 # (lib-net SFTP). Newest wins (owner, 2026-11-12); back to a crates.io version once rage publishes this.
 age = { git = "https://github.com/str4d/rage", rev = "b5b68c4f4f7ea5c368bc060f6fe0237549c3a13f", default-features = false }
 # lib-net's share client, for store and forward through a WebDAV, SFTP or S3 share (sync-core's net-remote feature,
-# Droidtop/tracker#573). Optional: a program that does not ask for it never builds it, so Pythia's Rust 1.85 build is
-# untouched: the 1.85 floor holds for everything else (net-remote needs 1.89).
-net-remote = { git = "https://github.com/Droidtop/lib-net", tag = "v0.2.1" }
+# Droidtop/tracker#573). Optional: a program that does not ask for it never builds it.
+net-remote = { git = "https://github.com/Droidtop/lib-net", tag = "v0.2.6" }
 # windowcast's device identity and pairing, used as they are (docs/DESIGN.md
 # section 3). Pinned by commit; both crates are GPL-3.0-only, which is why
 # this workspace is too.

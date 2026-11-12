@@ -7,6 +7,14 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [0.2.1]
 
+### Changed
+- Rust 1.91 is the oldest these crates build with (`rust-version` 1.85 -> 1.91): age's ML-KEM stack (crypto-bigint 0.7)
+  needs 1.87, and 1.91 is the newest versioned rustc in Ubuntu's noble-updates and jammy-updates, which Pythia builds
+  with (owner, 2026-11-12). The msrv job checks 1.91.
+- sync-store locks with std's `File::lock` (Rust 1.89) in place of the fs4 crate.
+- net-remote is lib-net v0.2.6 (was v0.2.1), the one droidtop's native library uses. The lock takes the newest
+  compatible version of every dependency.
+
 ### Fixed
 - sync-core takes age from rage main (b5b68c4, age 0.12.1 on ml-kem 0.3 and hpke 0.14) instead of the crates.io 0.12.1
   release, which is still on ml-kem 0.2. Those ml-kem 0.2 releases pin kem =0.3.0-pre.0, while russh 0.65 (lib-net's

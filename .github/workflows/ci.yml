@@ -54,9 +54,9 @@ jobs:
           cargo clippy -p sync-core --features net-remote --all-targets -- -D warnings
           cargo test -p sync-core --features net-remote --no-fail-fast
 
-  # The oldest Rust these crates support, rust-version in Cargo.toml: Pythia builds them with Ubuntu's rustc-1.85, as
+  # The oldest Rust these crates support, rust-version in Cargo.toml: Pythia builds them with Ubuntu's rustc-1.91, as
   # Launchpad does. The checked-in Cargo.lock is resolved for stable, so this resolves one the way a consumer's would:
-  # with cargo's MSRV-aware resolver, which picks dependency versions 1.85 can build.
+  # with cargo's MSRV-aware resolver, which picks dependency versions 1.91 can build.
   msrv:
     runs-on: ubuntu-24.04
     steps:
@@ -65,8 +65,8 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
-          toolchain: "1.85"
-      - name: Check with Rust 1.85
+          toolchain: "1.91"
+      - name: Check with Rust 1.91
         env:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: |

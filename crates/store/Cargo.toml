@@ -18,6 +18,3 @@ serde.workspace = true
 serde_json.workspace = true
 dirs.workspace = true
 gethostname.workspace = true
-# The store's operating system lock on Rust 1.85 (std has File::lock from 1.89 only): flock on Unix,
-# LockFileEx on Windows, as std's.
-fs4 = "1.1"
