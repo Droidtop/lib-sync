@@ -8,11 +8,12 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ## [0.2.1]
 
 ### Fixed
-- sync-core takes age 0.11 instead of 0.12. age 0.12 always pulls ml-kem 0.2, whose usable releases pin kem
-  =0.3.0-pre.0, while russh 0.65 (lib-net's SFTP, in droidtop's native library) needs ml-kem 0.3 and kem 0.3.0. Cargo
-  keeps one kem 0.3, so the only graph left was ml-kem 0.2.1, which does not compile against kem 0.3.0 (E0437,
-  `kem::Encapsulate`). sync-core uses only age's x25519 and scrypt recipients, which 0.11 has, and files are the same
-  age-encryption.org/v1 format either way. Droidtop/tracker#573.
+- sync-core takes age from rage main (b5b68c4, age 0.12.1 on ml-kem 0.3 and hpke 0.14) instead of the crates.io 0.12.1
+  release, which is still on ml-kem 0.2. Those ml-kem 0.2 releases pin kem =0.3.0-pre.0, while russh 0.65 (lib-net's
+  SFTP, in droidtop's native library) needs ml-kem 0.3 and kem 0.3.0, and Cargo keeps one kem 0.3: the two could not
+  share a graph. This moves forward to ml-kem 0.3.4, as newest as there is; it becomes the crates.io release that
+  carries it once rage publishes one. Rust 1.85 still builds it (ml-kem 0.3.3 under the 1.85 resolver).
+  Droidtop/tracker#573.
 
 ## [0.2.0]
 

@@ -14,7 +14,9 @@ rust-version = "1.85"
 [workspace.dependencies]
 # age (age-encryption.org/v1) for what droidtop locks on the person's shares (sync-core::locked, Droidtop/tracker#573):
 # a documented format the person can open with the age or rage tools, without droidtop.
-age = { version = "0.11", default-features = false }
+# From rage main, not crates.io: the 0.12.1 release is still on ml-kem 0.2, which cannot share a graph with russh's ml-kem 0.3
+# (lib-net SFTP). Newest wins (owner, 2026-11-12); back to a crates.io version once rage publishes this.
+age = { git = "https://github.com/str4d/rage", rev = "b5b68c4f4f7ea5c368bc060f6fe0237549c3a13f", default-features = false }
 # lib-net's share client, for store and forward through a WebDAV, SFTP or S3 share (sync-core's net-remote feature,
 # Droidtop/tracker#573). Optional: a program that does not ask for it never builds it, so Pythia's Rust 1.85 build is
 # untouched: the 1.85 floor holds for everything else (net-remote needs 1.89).
