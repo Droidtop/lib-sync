@@ -18,3 +18,7 @@ serde.workspace = true
 serde_json.workspace = true
 dirs.workspace = true
 gethostname.workspace = true
+
+# Android's file lock (lock_exclusive in src/lib.rs): std's answers Unsupported there before Rust 1.98.
+[target.'cfg(target_os = "android")'.dependencies]
+libc = "0.2.191"

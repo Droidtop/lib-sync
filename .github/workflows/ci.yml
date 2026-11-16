@@ -211,6 +211,8 @@ jobs:
           for target in aarch64-linux-android x86_64-linux-android; do
             lib/scripts/with-this-library.sh droidtop/native build --release --target "$target"
           done
+          # sync-store's Android lock (flock through libc), which droidtop's library does not build: checked here.
+          (cd lib && cargo check -p sync-store --target aarch64-linux-android --locked)
           ls -l droidtop/native/target/*-linux-android/release/libdroidtop_agent.so 2>/dev/null || true
 
   # A green main whose version has no tag yet is released: CI tags v<version> on this commit, and that tag

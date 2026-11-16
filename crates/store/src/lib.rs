@@ -329,16 +329,35 @@ impl FileLock {
     /// file system without locks): the caller goes on without, as a write to a folder that refuses locks fails the same way.
     fn take(of: &Path) -> io::Result<FileLock> {
         let file = fs::OpenOptions::new().write(true).create(true).truncate(false).open(of.with_extension("lock"))?;
-        // std's own exclusive lock (Rust 1.89): flock on Unix and Android, LockFileEx on Windows. Android's app storage
-        // supports flock; shared or removable storage may not, and that error is the no-lock case above.
-        file.lock()?;
+        lock_exclusive(&file)?;
         Ok(FileLock(file))
+    }
+}
+
+/// std's own exclusive lock (Rust 1.89): flock on Unix, LockFileEx on Windows.
+#[cfg(not(target_os = "android"))]
+fn lock_exclusive(file: &fs::File) -> io::Result<()> {
+    file.lock()
+}
+
+/// On Android std's `File::lock` answers `Unsupported` before Rust 1.98, which the caller would take for a file system
+/// without locks and go on unlocked. So Android asks the kernel for the same `flock(LOCK_EX)` std uses elsewhere. App
+/// storage supports it; storage that refuses it is the no-lock case in [`FileLock::take`].
+#[cfg(target_os = "android")]
+fn lock_exclusive(file: &fs::File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    // SAFETY: the descriptor is the open file's own, borrowed for the call.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
     }
 }
 
 impl Drop for FileLock {
     fn drop(&mut self) {
-        // Unlocking can only fail for a file already closed; closing the file releases the lock in any case.
+        // Unlocking can only fail for a file already closed (or, on Android before Rust 1.98, is not supported);
+        // closing the file releases the lock in any case.
         let _ = self.0.unlock();
     }
 }

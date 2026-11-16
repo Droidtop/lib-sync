@@ -8,8 +8,9 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ### Fixed
 - The 0.2.1 entry said Rust 1.85 still built sync-core; 1.91 is the floor, as the same entry says first. The msrv job
   now also checks sync-core with `net-remote`, the feature droidtop's native library builds it with.
-- sync-store's lock notes that a file system without locks (some shared or removable storage on Android) is handled
-  as before: the caller goes on without the lock.
+- sync-store locks on Android again. std's `File::lock`, which 0.2.1 moved to, answers `Unsupported` on Android
+  before Rust 1.98, and the store took that for a file system without locks and went on unlocked. Android now asks
+  for the same `flock(LOCK_EX)` through libc; CI checks sync-store for aarch64-linux-android.
 
 ## [0.2.1]
 

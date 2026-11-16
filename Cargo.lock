@@ -2998,6 +2998,7 @@ version = "0.2.1"
 dependencies = [
  "dirs",
  "gethostname",
+ "libc",
  "serde",
  "serde_json",
  "sync-core",
