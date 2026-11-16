@@ -329,7 +329,8 @@ impl FileLock {
     /// file system without locks): the caller goes on without, as a write to a folder that refuses locks fails the same way.
     fn take(of: &Path) -> io::Result<FileLock> {
         let file = fs::OpenOptions::new().write(true).create(true).truncate(false).open(of.with_extension("lock"))?;
-        // std's own exclusive lock (Rust 1.89): flock on Unix, LockFileEx on Windows.
+        // std's own exclusive lock (Rust 1.89): flock on Unix and Android, LockFileEx on Windows. Android's app storage
+        // supports flock; shared or removable storage may not, and that error is the no-lock case above.
         file.lock()?;
         Ok(FileLock(file))
     }
