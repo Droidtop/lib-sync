@@ -72,6 +72,8 @@ jobs:
         run: |
           cargo generate-lockfile
           cargo check --workspace --all-targets
+          # With the feature droidtop's native library builds it with: lib-net's SFTP and its ML-KEM stack.
+          cargo check -p sync-core --features net-remote --all-targets
 
   # The library's public interface stays compatible within a version (Droidtop/tracker#867, owner 2026-11-04: "I
   # should be able to bump the version number and immediately get the benefit"). cargo-semver-checks compares this

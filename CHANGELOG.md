@@ -5,6 +5,12 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 
 ## [Unreleased]
 
+### Fixed
+- The 0.2.1 entry said Rust 1.85 still built sync-core; 1.91 is the floor, as the same entry says first. The msrv job
+  now also checks sync-core with `net-remote`, the feature droidtop's native library builds it with.
+- sync-store's lock notes that a file system without locks (some shared or removable storage on Android) is handled
+  as before: the caller goes on without the lock.
+
 ## [0.2.1]
 
 ### Changed
@@ -20,8 +26,7 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
   release, which is still on ml-kem 0.2. Those ml-kem 0.2 releases pin kem =0.3.0-pre.0, while russh 0.65 (lib-net's
   SFTP, in droidtop's native library) needs ml-kem 0.3 and kem 0.3.0, and Cargo keeps one kem 0.3: the two could not
   share a graph. This moves forward to ml-kem 0.3.4, as newest as there is; it becomes the crates.io release that
-  carries it once rage publishes one. Rust 1.85 still builds it (ml-kem 0.3.3 under the 1.85 resolver).
-  Droidtop/tracker#573.
+  carries it once rage publishes one. Droidtop/tracker#573.
 
 ## [0.2.0]
 
