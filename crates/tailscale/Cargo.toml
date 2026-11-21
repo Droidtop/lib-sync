@@ -1,0 +1,12 @@
+[package]
+name = "net-tailscale"
+description = "The local Tailscale node's LocalAPI: whether the tailnet is up, this device's addresses and its peers, as Tailscale's own apps and ktailctl read them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.85"
+
+[dependencies]
+thiserror.workspace = true
+serde_json.workspace = true
