@@ -1,5 +1,5 @@
 //! Copying a game's folder between a handheld and a computer over loopback
-//! (Droidtop/tracker#469 part 3): a new version folder beside the old one,
+//! (mytop-project/tracker#469 part 3): a new version folder beside the old one,
 //! resumed after an interruption, checked file by file, and the other way
 //! round into the computer's game folder. Test games are made here; no real
 //! game is read.

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to lib-sync. Versions follow [Semantic Versioning](https://semver.org/)
+All notable changes to mytop-sync. Versions follow [Semantic Versioning](https://semver.org/)
 (in 0.x, only a new minor version may break the interface; CI's `semver` job enforces it).
 
 ## [Unreleased]
@@ -19,21 +19,21 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
   needs 1.87, and 1.91 is the newest versioned rustc in Ubuntu's noble-updates and jammy-updates, which Pythia builds
   with (owner, 2026-11-12). The msrv job checks 1.91.
 - sync-store locks with std's `File::lock` (Rust 1.89) in place of the fs4 crate.
-- net-remote is lib-net v0.2.6 (was v0.2.1), the one droidtop's native library uses. The lock takes the newest
+- net-remote is mytop-net v0.2.6 (was v0.2.1), the one droidtop's native library uses. The lock takes the newest
   compatible version of every dependency.
 
 ### Fixed
 - sync-core takes age from rage main (b5b68c4, age 0.12.1 on ml-kem 0.3 and hpke 0.14) instead of the crates.io 0.12.1
-  release, which is still on ml-kem 0.2. Those ml-kem 0.2 releases pin kem =0.3.0-pre.0, while russh 0.65 (lib-net's
+  release, which is still on ml-kem 0.2. Those ml-kem 0.2 releases pin kem =0.3.0-pre.0, while russh 0.65 (mytop-net's
   SFTP, in droidtop's native library) needs ml-kem 0.3 and kem 0.3.0, and Cargo keeps one kem 0.3: the two could not
   share a graph. This moves forward to ml-kem 0.3.4, as newest as there is; it becomes the crates.io release that
-  carries it once rage publishes one. Droidtop/tracker#573.
+  carries it once rage publishes one. mytop-project/tracker#573.
 
 ## [0.2.0]
 
 ### Added
 - `sync-core::locked`: what droidtop locks on the person's shares, in age's format (age-encryption.org/v1), so they
-  can open it themselves with the age or rage tools (Droidtop/tracker#573; owner, 2026-11-05: "We should use
+  can open it themselves with the age or rage tools (mytop-project/tracker#573; owner, 2026-11-05: "We should use
   well-known crypto and encapsulation mechanisms, so the user can retrieve that data themselves"). A `Keyring` of the
   person's share keys (X25519):
   - `generate`, and `merge` as a union, so devices that each made a key keep both;
@@ -51,15 +51,15 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ## [0.1.7]
 
 ### Added
-- `sync-core`: feature `net-remote`, off by default. `share::RemoteShare` makes any lib-net share (WebDAV, SFTP, S3)
-  a `Share`, so store and forward and save sets go straight through it (Droidtop/tracker#573; owner, 2026-11-05: "A
-  share can be a backend for a sync"). lib-net's `net-remote` is taken at tag `v0.2.1`. A program that doesn't turn
+- `sync-core`: feature `net-remote`, off by default. `share::RemoteShare` makes any mytop-net share (WebDAV, SFTP, S3)
+  a `Share`, so store and forward and save sets go straight through it (mytop-project/tracker#573; owner, 2026-11-05: "A
+  share can be a backend for a sync"). mytop-net's `net-remote` is taken at tag `v0.2.1`. A program that doesn't turn
   the feature on never builds it, so the Rust 1.85 floor holds for everything else (net-remote itself needs 1.89).
 
 ## [0.1.6]
 
 ### Added
-- `sync-core` tunnel: a side link (Droidtop/tracker#113). `TunnelStream::side()` hands the app, once, a `SideLink`:
+- `sync-core` tunnel: a side link (mytop-project/tracker#113). `TunnelStream::side()` hands the app, once, a `SideLink`:
   a second reliable byte stream through the same WireGuard session (inner TCP port 47614), beside the session
   channel, as two queues so one thread can read while another writes. A remote stream's signaling runs on it while
   its media rides `datagrams()`. An empty read is its end; dropping `outbound` closes it.
@@ -76,7 +76,7 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ## [0.1.4]
 
 ### Added
-- `sync-core`: a game's saves kept on a share (`sharesaves::sync_with_share`, Droidtop/tracker#573). The same rule as
+- `sync-core`: a game's saves kept on a share (`sharesaves::sync_with_share`, mytop-project/tracker#573). The same rule as
   a live sync (one side changed wins; both changed is `Outcome::Conflict`, settled by the person's choice; the side
   overwritten keeps a copy), with the share as the other side, so devices on one share keep each other's saves with
   no computer. On the share: `droidtop/saves/<digest of the game key>/` with `blobs/<digest>` (written once, never
@@ -84,10 +84,10 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
   (`ShareSaveRequest::sealed`): every blob and set sealed with the agent's sealing to this device's key, so the share
   holds ciphertext only; a set another device locked is refused and changes nothing. A share with no set never makes
   a device delete its saves: its own set is written there.
-- `sync-core`: store and forward over any share (Droidtop/tracker#573, #800 item 3). `share::Share` names what sync
+- `sync-core`: store and forward over any share (mytop-project/tracker#573, #800 item 3). `share::Share` names what sync
   needs from a share (list a folder's finished files, read, write in one step, remove one file, make folders), with
-  `share::Folder` for a folder on this computer. A share client (lib-net's `net-remote`) is one more implementation
-  of it (owner, 2026-11-05: "lib-sync controls synchronization. A share can be a backend for a sync"). New:
+  `share::Folder` for a folder on this computer. A share client (mytop-net's `net-remote`) is one more implementation
+  of it (owner, 2026-11-05: "mytop-sync controls synchronization. A share can be a backend for a sync"). New:
   `mailbox::post_via`, `collect_via`, `inbox_path`, `ShareLetter`, and `savesync::post_via`. `mailbox::post`,
   `collect` and `savesync::post_to_share` keep their signatures and go through `Folder`; a letter is now written to
   `.<name>.<tag>.part` before its rename.
@@ -95,18 +95,18 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 ## [0.1.3]
 
 ### Added
-- `sync-core` tunnel: datagrams beside the stream (Droidtop/tracker#113). Each WireGuard session has an inner UDP
+- `sync-core` tunnel: datagrams beside the stream (mytop-project/tracker#113). Each WireGuard session has an inner UDP
   socket next to its TCP link, and `TunnelStream::datagrams()` hands the app `Datagrams`, two queues of whole
   datagrams to and from the other end. So a remote stream's media rides the agent's own tunnel (owner, 2026-10-28:
   "Our standard carrier tunnel is also a remote streaming tunnel"). Unreliable and unordered, as UDP is; at most
   `Datagrams::MAX` bytes each.
 - CI's `semver` job: `cargo-semver-checks` against the last release, so a breaking change fails unless its version and
-  this CHANGELOG say so (Droidtop/tracker#867).
+  this CHANGELOG say so (mytop-project/tracker#867).
 
 ## [0.1.2]
 
 ### Added
-- `sync-core`: cross-store identity, first slice (Droidtop/tracker#798, droidtop-agent docs/DESIGN.md section 16
+- `sync-core`: cross-store identity, first slice (mytop-project/tracker#798, droidtop-agent docs/DESIGN.md section 16
   step 1). A third library change kind, `Change::Link {game, into, at}`: key `game` is the same game as key
   `into`, `None` undoes it, one per key with the newest winning, a self-link refused. `Library::link` makes one
   and `Library::canonical` follows links to the key a game is known by; a loop ends at its smallest key, so every
@@ -120,12 +120,12 @@ All notable changes to lib-sync. Versions follow [Semantic Versioning](https://s
 - `sync-core`: a device the computer no longer knows is told so. The accepting side sends one error with code
   `not_paired` through the finished channel before closing, reads and drops what the device sends until it
   hangs up, then sends close_notify, and `client::connect` stops at `ConnectError::NotPaired` instead of trying
-  the other paths. From droidtop-agent 54a4a00 and 41f2d04 (Droidtop/tracker#531), which landed in
+  the other paths. From droidtop-agent 54a4a00 and 41f2d04 (mytop-project/tracker#531), which landed in
   droidtop-agent's copy of this crate after it moved here.
 
 ## [0.1.0]
 
 ### Added
-- `sync-core`: identity, pairing, the session channel, the protocol, the library change log and the save-sync rules. Moved from droidtop-agent `0ec4110` `crates/core` unchanged but for its package name (Droidtop/tracker#867 step 1).
-- `sync-store`: this computer's state on disk: identity shared with windowcast, paired devices, settings, the library. Moved from droidtop-agent `0ec4110` `crates/store` unchanged but for its package name (Droidtop/tracker#867 step 1).
-- `sync-pair`: pairing a device: typing the code the other shows, or showing one. Moved from droidtop-agent `0ec4110` `crates/pair` unchanged but for its package name (Droidtop/tracker#867 step 1).
+- `sync-core`: identity, pairing, the session channel, the protocol, the library change log and the save-sync rules. Moved from droidtop-agent `0ec4110` `crates/core` unchanged but for its package name (mytop-project/tracker#867 step 1).
+- `sync-store`: this computer's state on disk: identity shared with windowcast, paired devices, settings, the library. Moved from droidtop-agent `0ec4110` `crates/store` unchanged but for its package name (mytop-project/tracker#867 step 1).
+- `sync-pair`: pairing a device: typing the code the other shows, or showing one. Moved from droidtop-agent `0ec4110` `crates/pair` unchanged but for its package name (mytop-project/tracker#867 step 1).

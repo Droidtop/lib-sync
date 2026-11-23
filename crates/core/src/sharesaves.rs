@@ -1,4 +1,4 @@
-//! A game's saves kept on one of the person's shares (Droidtop/tracker#573): the same rule as a live
+//! A game's saves kept on one of the person's shares (mytop-project/tracker#573): the same rule as a live
 //! sync with a computer (savesync: a side that alone changed wins; both changed is a conflict the
 //! person settles; the side overwritten keeps a copy first), with the share as the other side. So two
 //! devices on one share keep each other's saves, with no computer and no pairing.

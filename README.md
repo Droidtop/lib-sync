@@ -1,6 +1,6 @@
-# lib-sync
+# mytop-sync
 
-Device identity, pairing, the session channel, discovery and transports, the protocol and the sync rules, and this computer's agent state on disk. One of the shared library families of Droidtop/tracker#867: the libraries belong to no program;
+Device identity, pairing, the session channel, discovery and transports, the protocol and the sync rules, and this computer's agent state on disk. One of the shared library families of mytop-project/tracker#867: the libraries belong to no program;
 each program has its own scaffold and pins a tagged release of each library it uses (#867 D2).
 
 | Crate | Where | Holds |
@@ -41,7 +41,7 @@ once CI is green.
 
 ## Versions
 
-**The interface stays compatible within a version** (Droidtop/tracker#867, owner 2026-11-04: "I should be able to
+**The interface stays compatible within a version** (mytop-project/tracker#867, owner 2026-11-04: "I should be able to
 bump the version number and immediately get the benefit"). A program takes a fix by moving its pin, with no change
 to its own code. CI's `semver` job runs `cargo-semver-checks` against the last release: a breaking change fails unless
 the version says so (in 0.x, a new minor version) and the CHANGELOG says what broke and what a program changes.
@@ -51,5 +51,5 @@ yet tagged, so to release, raise that version (and the CHANGELOG) in the change 
 and the other libraries, depend on a tag:
 
 ```toml
-droidtop-agent-core = { package = "sync-core", git = "https://github.com/Droidtop/lib-sync", tag = "v0.1.0" }
+droidtop-agent-core = { package = "sync-core", git = "https://github.com/mytop-project/mytop-sync", tag = "v0.1.0" }
 ```

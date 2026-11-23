@@ -19,7 +19,7 @@ pub const CHUNK: usize = 1024 * 1024;
 /// What a device publishes to the devices paired with it, per plugin: each
 /// plugin's id and its small value (the Syncthing plugin's
 /// `{"syncthing": "<device ID>"}`), hello feature `announce`
-/// (Droidtop/tracker#556, #553). droidtop shows each plugin only its own.
+/// (mytop-project/tracker#556, #553). droidtop shows each plugin only its own.
 pub type Announcements = BTreeMap<String, Value>;
 
 /// The most a plugin's value may take, as JSON.
@@ -231,7 +231,7 @@ pub const NOT_OFFERED: &str = "not_offered";
 
 /// The [`Response::Error`] `code` a device sends, right after the handshake
 /// and in place of any answer, to a device it does not trust: it no longer
-/// knows it (Droidtop/tracker#531). Only the device the other side asked
+/// knows it (mytop-project/tracker#531). Only the device the other side asked
 /// for can send it, since its certificate was checked first.
 pub const NOT_PAIRED: &str = "not_paired";
 

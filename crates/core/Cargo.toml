@@ -7,14 +7,14 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# The name code imports it by, unchanged from droidtop-agent (Droidtop/tracker#867 step 1 moves code
+# The name code imports it by, unchanged from droidtop-agent (mytop-project/tracker#867 step 1 moves code
 # without editing it; renaming the imports is a later, mechanical change).
 [lib]
 name = "droidtop_agent_core"
 path = "src/lib.rs"
 
 [features]
-# A lib-net share (WebDAV, SFTP, S3) as a store-and-forward share: share::RemoteShare.
+# A mytop-net share (WebDAV, SFTP, S3) as a store-and-forward share: share::RemoteShare.
 net-remote = ["dep:net-remote"]
 
 [dependencies]

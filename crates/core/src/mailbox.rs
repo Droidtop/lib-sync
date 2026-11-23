@@ -6,7 +6,7 @@
 //!
 //! The share is any [`Share`]: a folder on this computer ([`Folder`], what [`post`] and [`collect`]
 //! use), or a share client's share through its own implementation of the trait ([`post_via`],
-//! [`collect_via`]; Droidtop/tracker#573, #800 item 3).
+//! [`collect_via`]; mytop-project/tracker#573, #800 item 3).
 //!
 //! Sealing: XChaCha20-Poly1305 under a key derived from X25519 between the
 //! two identities, a random 24-byte nonce per message, and the sender, the

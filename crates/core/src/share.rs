@@ -1,10 +1,10 @@
 //! Where store and forward leaves its letters: a share (docs/DESIGN.md section 10, transport 3;
-//! Droidtop/tracker#573, #800 item 3).
+//! mytop-project/tracker#573, #800 item 3).
 //!
-//! lib-sync controls synchronization; the share itself is a network resource that lives elsewhere
+//! mytop-sync controls synchronization; the share itself is a network resource that lives elsewhere
 //! (owner, 2026-11-05, on #573: "A share can be a backend for a sync, but it's really just a network
 //! resource we can use for lots of stuff"). So sync only names the few things it needs from one, in
-//! [`Share`], and a share client (lib-net's `net-remote`: WebDAV and the backends to come) is one
+//! [`Share`], and a share client (mytop-net's `net-remote`: WebDAV and the backends to come) is one
 //! implementation of it. [`Folder`] is the other: a folder on this computer that the person's own sync
 //! tool carries.
 //!
@@ -52,7 +52,7 @@ pub fn check(path: &str) -> io::Result<&str> {
 }
 
 /// Whether [`name`] is a file a share is still writing: it starts with a dot and ends in `.part`, as
-/// [`Folder::write`] and lib-net's share client name them.
+/// [`Folder::write`] and mytop-net's share client name them.
 pub fn is_partial(name: &str) -> bool {
     name.starts_with('.') && name.ends_with(".part")
 }
@@ -129,9 +129,9 @@ impl Share for Folder {
     }
 }
 
-/// A lib-net share (WebDAV, SFTP, S3 and the backends to come) as a [`Share`]: lib-sync's store and
+/// A mytop-net share (WebDAV, SFTP, S3 and the backends to come) as a [`Share`]: mytop-sync's store and
 /// forward and save sets through it, with no folder mirrored on this device (owner, 2026-11-05, on
-/// Droidtop/tracker#573: "A share can be a backend for a sync").
+/// mytop-project/tracker#573: "A share can be a backend for a sync").
 #[cfg(feature = "net-remote")]
 pub struct RemoteShare<'a>(pub &'a dyn net_remote::Remote);
 
@@ -185,13 +185,13 @@ mod tests {
         let share = RemoteShare(&folder);
         let a = DeviceKey::generate();
         let b = DeviceKey::generate();
-        let posted = mailbox::post_via(&share, &a, &b.peer_id(), b"through lib-net").unwrap();
-        // lib-net writes through a temporary name too, and listing skips it.
+        let posted = mailbox::post_via(&share, &a, &b.peer_id(), b"through mytop-net").unwrap();
+        // mytop-net writes through a temporary name too, and listing skips it.
         fs::write(share_path(&root, &mailbox::inbox_path(&b.peer_id())).join(".x.dtmsg.ab12.part"), b"half").unwrap();
         let (letters, failed) = mailbox::collect_via(&share, &b, |p| *p == a.peer_id()).unwrap();
         assert!(failed.is_empty());
         assert_eq!(letters.len(), 1);
-        assert_eq!(letters[0].payload, b"through lib-net");
+        assert_eq!(letters[0].payload, b"through mytop-net");
         assert_eq!(letters[0].path, posted);
         share.remove(&posted).unwrap();
         assert!(mailbox::collect_via(&share, &b, |_| true).unwrap().0.is_empty());

@@ -1785,7 +1785,7 @@ dependencies = [
 [[package]]
 name = "net-remote"
 version = "0.2.6"
-source = "git+https://github.com/Droidtop/lib-net?tag=v0.2.6#faae29765f469f4117a8cb49b7f209021f6a894c"
+source = "git+https://github.com/mytop-project/mytop-net?tag=v0.2.6#faae29765f469f4117a8cb49b7f209021f6a894c"
 dependencies = [
  "base64 0.22.1",
  "cc",
@@ -3401,7 +3401,7 @@ dependencies = [
 [[package]]
 name = "windowcast-identity"
 version = "0.37.0"
-source = "git+https://github.com/Droidtop/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
+source = "git+https://github.com/mytop-project/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
 dependencies = [
  "ed25519-dalek 2.2.0",
  "rand_core 0.6.4",
@@ -3411,7 +3411,7 @@ dependencies = [
 [[package]]
 name = "windowcast-pairing"
 version = "0.37.0"
-source = "git+https://github.com/Droidtop/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
+source = "git+https://github.com/mytop-project/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
 dependencies = [
  "hkdf 0.12.4",
  "hmac 0.12.1",
@@ -3426,7 +3426,7 @@ dependencies = [
 [[package]]
 name = "windowcast-rendezvous"
 version = "0.37.0"
-source = "git+https://github.com/Droidtop/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
+source = "git+https://github.com/mytop-project/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
 dependencies = [
  "ed25519-dalek 2.2.0",
  "rand_core 0.6.4",
@@ -3889,14 +3889,14 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 [[patch.unused]]
 name = "ironrdp-connector"
 version = "0.10.0"
-source = "git+https://github.com/Droidtop/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
+source = "git+https://github.com/mytop-project/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
 
 [[patch.unused]]
 name = "sspi"
 version = "0.21.3"
-source = "git+https://github.com/Droidtop/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
+source = "git+https://github.com/mytop-project/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
 
 [[patch.unused]]
 name = "winscard"
 version = "0.3.4"
-source = "git+https://github.com/Droidtop/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"
+source = "git+https://github.com/mytop-project/windowcast?rev=7359936a6083cc7f2ca6cae67aedf45ad9797026#7359936a6083cc7f2ca6cae67aedf45ad9797026"

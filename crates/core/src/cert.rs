@@ -1,4 +1,4 @@
-//! A device's certificate (docs/DESIGN.md section 4, Droidtop/tracker#556):
+//! A device's certificate (docs/DESIGN.md section 4, mytop-project/tracker#556):
 //! a self-signed X.509 certificate over the device's one Ed25519 key, made
 //! by the device itself and issued by no one. Pairing pins it, and every
 //! session is mutual TLS 1.3 in which each side presents its own and checks

@@ -185,7 +185,7 @@ pub struct Settings {
     #[serde(default)]
     pub offers: BTreeMap<String, Offer>,
     /// What this computer announces to its paired devices, per plugin
-    /// (`set_announce`; Droidtop/tracker#556): a desktop manager's Syncthing
+    /// (`set_announce`; mytop-project/tracker#556): a desktop manager's Syncthing
     /// module puts its device ID here.
     #[serde(default)]
     pub announce: Announcements,
@@ -316,7 +316,7 @@ fn stamp(path: &Path) -> Stamp {
 /// An operating system lock on a file beside a state file, so the headless
 /// agent, the window and a command line run at the same time change it one
 /// after another and never write back a copy that is out of date
-/// (Droidtop/tracker#528, #531). The system holds it: it is released when
+/// (mytop-project/tracker#528, #531). The system holds it: it is released when
 /// this is dropped and when the process dies, so a holder that is slow is
 /// waited for and one that died is not (the lock file used to be removed after
 /// ten seconds whoever held it, which let a second writer in beside a slow
@@ -694,7 +694,7 @@ impl Store {
 
     /// A paired device reached this computer. One the trusted list holds but
     /// the device list lost (the list was emptied by the bug in
-    /// Droidtop/tracker#528) is put back, named as it named itself in the
+    /// mytop-project/tracker#528) is put back, named as it named itself in the
     /// library, so Status and `devices` show it again.
     pub fn seen(&self, peer: &PeerId, address: Option<String>) {
         let id = peer.to_hex();
@@ -789,7 +789,7 @@ mod tests {
     }
 
     /// The headless agent, the window and a command line are separate
-    /// processes with a copy of this state each (Droidtop/tracker#528, #531):
+    /// processes with a copy of this state each (mytop-project/tracker#528, #531):
     /// none writes back what it read at the start over what another saved.
     #[test]
     fn copies_of_the_agent_running_together_do_not_overwrite_each_other() {
@@ -812,7 +812,7 @@ mod tests {
     }
 
     /// A second taker waits for the first, however long it holds the lock, and then gets it
-    /// (Droidtop/tracker#761: the old lock was broken after ten seconds, live holder or not).
+    /// (mytop-project/tracker#761: the old lock was broken after ten seconds, live holder or not).
     #[test]
     fn a_lock_is_waited_for_while_it_is_held() {
         let d = dirs("lock");

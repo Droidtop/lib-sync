@@ -267,7 +267,7 @@ pub fn post_to_share(share: &Path, key: &DeviceKey, to: &PeerId, game: &GameRef,
     post_via(&Folder::new(share), key, to, game, roots, baseline_path)
 }
 
-/// [`post_to_share`] for any [`Share`]: a share client's share as well as a folder (Droidtop/tracker#573, #800).
+/// [`post_to_share`] for any [`Share`]: a share client's share as well as a folder (mytop-project/tracker#573, #800).
 pub fn post_via(share: &dyn Share, key: &DeviceKey, to: &PeerId, game: &GameRef, roots: &Roots, baseline_path: &Path) -> Result<Posted> {
     let spec: Option<SaveSpec> = fs::read(spec_path(baseline_path)).ok().and_then(|b| serde_json::from_slice(&b).ok());
     let posted = posted_path(baseline_path);

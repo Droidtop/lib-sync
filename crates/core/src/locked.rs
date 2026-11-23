@@ -1,4 +1,4 @@
-//! What droidtop locks on the person's shares, in a format they can open themselves (Droidtop/tracker#573).
+//! What droidtop locks on the person's shares, in a format they can open themselves (mytop-project/tracker#573).
 //!
 //! The owner, 2026-11-05: "When parts of a share (since it doesn't have to be all or nothing) are encrypted, we
 //! can sync those keys, and let the user export the key. We should use well-known crypto and encapsulation

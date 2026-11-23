@@ -83,7 +83,7 @@ pub enum Change {
         at: Hlc,
     },
     /// Cross-store identity (docs/DESIGN.md section 16, step 1;
-    /// Droidtop/tracker#798): the game known by key [`game`] is the same game
+    /// mytop-project/tracker#798): the game known by key [`game`] is the same game
     /// as key [`into`] (a person confirmed it, or a store said so); `None`
     /// undoes it. One per key, the newest wins. Sent only to a device that
     /// states hello feature [`LINK_FEATURE`]: an older one cannot read it.
@@ -168,7 +168,7 @@ pub struct GameRecord {
     #[serde(default)]
     pub marks: BTreeMap<String, MarkValue>,
     /// Every version any device has had installed, oldest first
-    /// (Droidtop/tracker#469 part 2): filled from the install changes this
+    /// (mytop-project/tracker#469 part 2): filled from the install changes this
     /// device applies, so devices that never meet learn it through the ones
     /// between them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

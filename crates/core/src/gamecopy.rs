@@ -1,5 +1,5 @@
 //! Copying a game's folder between devices (docs/DESIGN.md section 7,
-//! "Game updates"; Droidtop/tracker#469 part 3): the owner's "If I install an
+//! "Game updates"; mytop-project/tracker#469 part 3): the owner's "If I install an
 //! update to a game on my desktop, I should be able to sync it to the
 //! handheld and version-manage it automatically".
 //!

@@ -43,10 +43,10 @@ const TCP_BUFFER: usize = 256 * 1024;
 /// The side link carries signaling, a few kilobytes at a time.
 const SIDE_BUFFER: usize = 64 * 1024;
 /// The inner UDP port both ends use for datagrams beside the TCP link
-/// ([`TunnelStream::datagrams`]): a stream's media (Droidtop/tracker#113).
+/// ([`TunnelStream::datagrams`]): a stream's media (mytop-project/tracker#113).
 const DATAGRAM_PORT: u16 = 47_613;
 /// The inner TCP port of the second link beside the session channel
-/// ([`TunnelStream::side`]): a remote stream's signaling (Droidtop/tracker#113).
+/// ([`TunnelStream::side`]): a remote stream's signaling (mytop-project/tracker#113).
 const SIDE_PORT: u16 = 47_614;
 /// Datagrams each way the inner UDP socket holds before it drops. The loop
 /// empties them every few milliseconds, so this covers bursts (a keyframe's
@@ -138,7 +138,7 @@ pub struct SideLink {
 /// Whole datagrams to and from the other end of the same tunnel, beside its
 /// stream: what a remote stream's media rides on, so the agent's tunnel is
 /// also the streaming tunnel (owner, 2026-10-28: "Our standard carrier tunnel
-/// is also a remote streaming tunnel"; Droidtop/tracker#113). Unreliable and
+/// is also a remote streaming tunnel"; mytop-project/tracker#113). Unreliable and
 /// unordered, as UDP is; each is at most [`Datagrams::MAX`] bytes. They go
 /// while the stream is open.
 pub struct Datagrams {
@@ -163,7 +163,7 @@ impl TunnelStream {
 
     /// A second reliable byte stream through the same tunnel, beside this one,
     /// once: a remote stream's signaling runs on it as it does on any stream,
-    /// while this one carries the session channel (Droidtop/tracker#113). It
+    /// while this one carries the session channel (mytop-project/tracker#113). It
     /// ends with the tunnel, or when either end drops its side.
     pub fn side(&mut self) -> Option<SideLink> {
         self.side.take()
@@ -656,7 +656,7 @@ pub fn serve(
     // droidtop call opens a socket of its own, so one device can have a call
     // ending while the next starts (a library sync, then copying a game), or
     // two at once, and neither takes the other's session
-    // (Droidtop/tracker#529).
+    // (mytop-project/tracker#529).
     let mut sessions: Vec<(PeerId, Session)> = Vec::new();
     let mut buf = vec![0u8; WIRE];
     let mut out = vec![0u8; WIRE];
@@ -757,7 +757,7 @@ mod tests {
 
     /// Two calls in a row from the same device, each on a socket of its own
     /// (a library sync, then copying a game): the second is answered too
-    /// (Droidtop/tracker#529).
+    /// (mytop-project/tracker#529).
     #[test]
     fn a_second_call_right_after_the_first_is_answered() {
         let pc = DeviceKey::generate();
@@ -800,7 +800,7 @@ mod tests {
     }
 
     /// A second byte stream beside the session channel, as a remote stream's
-    /// signaling uses it (Droidtop/tracker#113): bytes each way, then its end.
+    /// signaling uses it (mytop-project/tracker#113): bytes each way, then its end.
     #[test]
     fn a_side_link_carries_bytes_beside_the_stream() {
         let pc = DeviceKey::generate();
@@ -859,7 +859,7 @@ mod tests {
     }
 
     /// A stream's media beside the session channel: datagrams each way
-    /// through the same tunnel (Droidtop/tracker#113).
+    /// through the same tunnel (mytop-project/tracker#113).
     #[test]
     fn datagrams_go_both_ways_beside_the_stream() {
         let pc = DeviceKey::generate();

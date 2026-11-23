@@ -104,7 +104,7 @@ impl Session {
 
 /// Why a device could not be reached: it did not answer by any path, it
 /// answered as itself and said it no longer knows this device ([`NotPaired`],
-/// Droidtop/tracker#531), or it answered and something failed.
+/// mytop-project/tracker#531), or it answered and something failed.
 ///
 /// [`NotPaired`]: ConnectError::NotPaired
 #[derive(Debug)]

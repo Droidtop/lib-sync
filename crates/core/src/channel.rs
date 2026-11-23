@@ -83,7 +83,7 @@ impl<S: Read + Write> Channel<S> {
         if !trusted(&peer) {
             // Say so in words a program can act on before closing, so the
             // device learns it was forgotten here rather than that nothing
-            // answered (Droidtop/tracker#531).
+            // answered (mytop-project/tracker#531).
             let mut refused = Channel { tls: Tls::Server(StreamOwned::new(conn, stream)), peer };
             let _ = refused.send_json(&crate::proto::Response::Error {
                 message: "this device does not know you any more: pair the two again".into(),
