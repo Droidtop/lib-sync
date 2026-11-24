@@ -5,6 +5,13 @@ All notable changes to mytop-sync. Versions follow [Semantic Versioning](https:/
 
 ## [Unreleased]
 
+## [0.2.2]
+
+### Changed
+- The organisation is mytop-project and this library is mytop-sync: every dependency below names mytop-project, so a
+  program that pins this tag and the same libraries finds one source for each of them (mytop-net v0.2.6 and windowcast
+  `7359936` are unchanged commits, now under their new URLs).
+
 ### Fixed
 - The 0.2.1 entry said Rust 1.85 still built sync-core; 1.91 is the floor, as the same entry says first. The msrv job
   now also checks sync-core with `net-remote`, the feature droidtop's native library builds it with.
