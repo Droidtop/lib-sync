@@ -11,6 +11,7 @@
 //! computer's [`Store`], so the window, the command line and a desktop
 //! manager (Pythia) pair the same way.
 
+use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -313,6 +314,62 @@ impl ComparisonCancel {
     }
 }
 
+// Windows does not reliably wake a receive already blocked on another duplicated socket when it is shut down.
+// Retry short I/O deadlines inside Read/Write, retaining partial-frame state in the caller's read_exact/write_all.
+struct CancellableIo<'a> {
+    stream: &'a mut TcpStream,
+    cancellation: &'a ComparisonCancel,
+    until: Instant,
+}
+
+impl<'a> CancellableIo<'a> {
+    fn new(stream: &'a mut TcpStream, cancellation: &'a ComparisonCancel) -> Result<Self, String> {
+        let slice = Some(Duration::from_millis(100));
+        stream.set_read_timeout(slice).map_err(|e| e.to_string())?;
+        stream.set_write_timeout(slice).map_err(|e| e.to_string())?;
+        Ok(Self { stream, cancellation, until: Instant::now() + ANSWER_FOR })
+    }
+
+    fn check(&self) -> io::Result<()> {
+        if self.cancellation.is_cancelled() {
+            return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Pairing stopped."));
+        }
+        if Instant::now() >= self.until {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "The other screen did not finish pairing in time."));
+        }
+        Ok(())
+    }
+}
+
+impl Read for CancellableIo<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        loop {
+            self.check()?;
+            match self.stream.read(bytes) {
+                Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
+                result => return result,
+            }
+        }
+    }
+}
+
+impl Write for CancellableIo<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        loop {
+            self.check()?;
+            match self.stream.write(bytes) {
+                Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
+                result => return result,
+            }
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.check()?;
+        self.stream.flush()
+    }
+}
+
 impl Offering {
     /// Waits for the one device that picks this computer, until [`cancel`]
     /// is set, and starts the comparison. The offer ends here: one attempt
@@ -340,9 +397,9 @@ impl Offering {
             }
         };
         let cancel_socket = comparison_cancel.arm(&stream)?;
-        stream.set_read_timeout(Some(ANSWER_FOR)).map_err(|e| e.to_string())?;
         drop(self);
-        let comparing = confirm::host_start(&mut stream, &store.key).map_err(|e| format!("Pairing did not start: {e}"))?;
+        let comparing = confirm::host_start(&mut CancellableIo::new(&mut stream, &comparison_cancel)?, &store.key)
+            .map_err(|e| format!("Pairing did not start: {e}"))?;
         Ok(Comparison::new(stream, comparing, String::new(), comparison_cancel, cancel_socket))
     }
 }
@@ -371,7 +428,7 @@ impl Comparison {
         }
         let paired = self
             .comparing
-            .finish(&mut self.stream, &store.key, &store.name(), Kind::Computer, same)
+            .finish(&mut CancellableIo::new(&mut self.stream, &self.cancellation)?, &store.key, &store.name(), Kind::Computer, same)
             .map_err(|e| format!("Nothing was paired: {e}"))?;
         self.cancellation.commit(|| keep(store, paired))
     }
@@ -404,8 +461,8 @@ pub fn pick_with_cancel(
     let mut stream =
         TcpStream::connect_timeout(&at, Duration::from_secs(10)).map_err(|e| format!("Could not reach {} at {at}: {e}", offer.name))?;
     let cancel_socket = cancellation.arm(&stream)?;
-    stream.set_read_timeout(Some(ANSWER_FOR)).map_err(|e| format!("Could not set up the connection to {at}: {e}"))?;
-    let comparing = confirm::client_start(&mut stream, &store.key).map_err(|e| format!("Pairing did not start: {e}"))?;
+    let comparing = confirm::client_start(&mut CancellableIo::new(&mut stream, &cancellation)?, &store.key)
+        .map_err(|e| format!("Pairing did not start: {e}"))?;
     if comparing.other.to_hex() != offer.id {
         return Err(format!("The device at {at} is not {}; nothing was paired.", offer.name));
     }
@@ -413,7 +470,6 @@ pub fn pick_with_cancel(
 }
 
 fn ask(question: &str) -> String {
-    use std::io::Write as _;
     print!("{question} ");
     let _ = std::io::stdout().flush();
     let mut line = String::new();

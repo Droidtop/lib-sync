@@ -69,3 +69,5 @@ operation returns the paired device truthfully. Cancellation does not roll back
 a pairing already committed. The handle retains only a weak socket reference,
 so retaining an old handle cannot keep a completed connection open. Existing
 `accept`, `pick` and `finish` callers remain source compatible.
+
+Comparison I/O retries 100ms socket timeouts internally while keeping partial-frame state and the existing two-minute answer deadline. This also makes cancellation bounded on Windows, where shutting down a duplicated socket may not wake an already blocked receive.

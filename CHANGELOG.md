@@ -11,6 +11,7 @@ All notable changes to mytop-sync. Versions follow [Semantic Versioning](https:/
 - A comparison cancellation handle interrupts a pending handshake or confirmation. Existing pairing APIs remain compatible.
 
 ### Fixed
+- Windows confirmation cancellation observes bounded I/O slices when socket shutdown alone does not wake a blocked receive.
 - Cancellation which wins before local identity persistence prevents a local pin; persistence which already won reports its actual successful pairing.
 
 ## [0.2.2]
