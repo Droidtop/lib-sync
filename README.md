@@ -53,3 +53,19 @@ and the other libraries, depend on a tag:
 ```toml
 droidtop-agent-core = { package = "sync-core", git = "https://github.com/mytop-project/mytop-sync", tag = "v0.1.0" }
 ```
+
+## Cancelling a comparison
+
+`sync-pair::ComparisonCancel` belongs to one comparison. Keep its `Arc` when
+calling `Offering::accept_with_cancel` or `pick_with_cancel`, or obtain it from
+`Comparison::cancellation()` before moving a comparison into `finish`. Calling
+`cancel()` interrupts an accepted TCP handshake or confirmation without holding
+a caller's state lock for the remote answer. A TCP connect already in progress
+can take its existing ten-second deadline before observing cancellation.
+
+Cancellation and local device persistence share a short commit lock. If cancel
+wins, `finish` cannot pin the other identity locally; if persistence wins, the
+operation returns the paired device truthfully. Cancellation does not roll back
+a pairing already committed. The handle retains only a weak socket reference,
+so retaining an old handle cannot keep a completed connection open. Existing
+`accept`, `pick` and `finish` callers remain source compatible.

@@ -11,14 +11,15 @@
 //! computer's [`Store`], so the window, the command line and a desktop
 //! manager (Pythia) pair the same way.
 
-use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 use droidtop_agent_core::accept::{Cancel, Ended, Waiting};
 use droidtop_agent_core::confirm::{self, Comparing};
 use droidtop_agent_core::pairing::{accept_pairing, new_code, pair_client, Kind, PairInvite, Paired, PairingEnded, MAX_ATTEMPTS};
+use droidtop_agent_core::sync::LockExt;
 use droidtop_agent_core::{discovery, PAIR_PORT, PORT};
 
 use droidtop_agent_store::Store;
@@ -253,8 +254,63 @@ impl Drop for Offering {
 pub struct Comparison {
     stream: TcpStream,
     comparing: Comparing,
+    cancellation: Arc<ComparisonCancel>,
+    // Keep the cancellation socket alive only as long as this exchange, not as long as a UI retains its handle.
+    _cancel_socket: Arc<TcpStream>,
     pub code: String,
     pub name: String,
+}
+
+/// Ends one comparison, including a confirmation already waiting for the other screen.
+/// Cancellation and local identity persistence are ordered: cancellation first means no local pin;
+/// persistence first completes normally and reports the device which was actually paired.
+#[derive(Default)]
+pub struct ComparisonCancel {
+    state: Mutex<ComparisonCancelState>,
+}
+
+#[derive(Default)]
+struct ComparisonCancelState {
+    cancelled: bool,
+    socket: Weak<TcpStream>,
+}
+
+impl ComparisonCancel {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        let mut state = self.state.locked();
+        state.cancelled = true;
+        if let Some(socket) = state.socket.upgrade() {
+            let _ = socket.shutdown(Shutdown::Both);
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.state.locked().cancelled
+    }
+
+    fn arm(&self, stream: &TcpStream) -> Result<Arc<TcpStream>, String> {
+        let mut state = self.state.locked();
+        if state.cancelled {
+            return Err("Pairing stopped.".into());
+        }
+        let socket = Arc::new(stream.try_clone().map_err(|e| format!("Could not make pairing cancellable: {e}"))?);
+        state.socket = Arc::downgrade(&socket);
+        Ok(socket)
+    }
+
+    fn commit<T>(&self, keep: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+        let state = self.state.locked();
+        if state.cancelled {
+            return Err("Pairing stopped; nothing was paired on this computer.".into());
+        }
+        let answer = keep();
+        drop(state);
+        answer
+    }
 }
 
 impl Offering {
@@ -262,6 +318,19 @@ impl Offering {
     /// is set, and starts the comparison. The offer ends here: one attempt
     /// each time the screen opens.
     pub fn accept(self, store: &Store, cancel: &Cancel) -> Result<Comparison, String> {
+        self.accept_with_cancel(store, cancel, Arc::new(ComparisonCancel::new()))
+    }
+
+    /// Like [`Self::accept`], with a handle which can also interrupt the accepted handshake and confirmation.
+    pub fn accept_with_cancel(
+        self,
+        store: &Store,
+        cancel: &Cancel,
+        comparison_cancel: Arc<ComparisonCancel>,
+    ) -> Result<Comparison, String> {
+        if comparison_cancel.is_cancelled() {
+            return Err("Pairing stopped.".into());
+        }
         let mut stream = {
             let waiting = Waiting::new(&self.listener, cancel, None).map_err(|e| e.to_string())?;
             match waiting.accept() {
@@ -270,26 +339,41 @@ impl Offering {
                 Err(Ended::Cancelled | Ended::TimedOut) => return Err("Pairing stopped.".into()),
             }
         };
+        let cancel_socket = comparison_cancel.arm(&stream)?;
         stream.set_read_timeout(Some(ANSWER_FOR)).map_err(|e| e.to_string())?;
         drop(self);
         let comparing = confirm::host_start(&mut stream, &store.key).map_err(|e| format!("Pairing did not start: {e}"))?;
-        Ok(Comparison::new(stream, comparing, String::new()))
+        Ok(Comparison::new(stream, comparing, String::new(), comparison_cancel, cancel_socket))
     }
 }
 
 impl Comparison {
-    fn new(stream: TcpStream, comparing: Comparing, name: String) -> Comparison {
-        Comparison { code: comparing.code.clone(), stream, comparing, name }
+    fn new(
+        stream: TcpStream,
+        comparing: Comparing,
+        name: String,
+        cancellation: Arc<ComparisonCancel>,
+        cancel_socket: Arc<TcpStream>,
+    ) -> Comparison {
+        Comparison { code: comparing.code.clone(), stream, comparing, cancellation, _cancel_socket: cancel_socket, name }
+    }
+
+    /// Retain this before moving the comparison into [`Self::finish`] to make Stop work while it waits.
+    pub fn cancellation(&self) -> Arc<ComparisonCancel> {
+        self.cancellation.clone()
     }
 
     /// The person's answer: [`same`] when the two screens show the same
     /// code. Pins the other device when both said so, and returns its name.
     pub fn finish(mut self, store: &Store, same: bool) -> Result<String, String> {
+        if self.cancellation.is_cancelled() {
+            return Err("Pairing stopped.".into());
+        }
         let paired = self
             .comparing
             .finish(&mut self.stream, &store.key, &store.name(), Kind::Computer, same)
             .map_err(|e| format!("Nothing was paired: {e}"))?;
-        keep(store, paired)
+        self.cancellation.commit(|| keep(store, paired))
     }
 }
 
@@ -303,14 +387,29 @@ pub fn computers(store: &Store, timeout: Duration) -> Result<Vec<(discovery::Off
 
 /// Picks [`offer`] at [`at`] and starts the comparison with it.
 pub fn pick(store: &Store, offer: &discovery::Offer, at: SocketAddr) -> Result<Comparison, String> {
+    pick_with_cancel(store, offer, at, Arc::new(ComparisonCancel::new()))
+}
+
+/// Like [`pick`], with cancellation retained through the network handshake and confirmation.
+/// A connect already in progress may take its existing ten-second deadline before noticing cancellation.
+pub fn pick_with_cancel(
+    store: &Store,
+    offer: &discovery::Offer,
+    at: SocketAddr,
+    cancellation: Arc<ComparisonCancel>,
+) -> Result<Comparison, String> {
+    if cancellation.is_cancelled() {
+        return Err("Pairing stopped.".into());
+    }
     let mut stream =
         TcpStream::connect_timeout(&at, Duration::from_secs(10)).map_err(|e| format!("Could not reach {} at {at}: {e}", offer.name))?;
+    let cancel_socket = cancellation.arm(&stream)?;
     stream.set_read_timeout(Some(ANSWER_FOR)).map_err(|e| format!("Could not set up the connection to {at}: {e}"))?;
     let comparing = confirm::client_start(&mut stream, &store.key).map_err(|e| format!("Pairing did not start: {e}"))?;
     if comparing.other.to_hex() != offer.id {
         return Err(format!("The device at {at} is not {}; nothing was paired.", offer.name));
     }
-    Ok(Comparison::new(stream, comparing, offer.name.clone()))
+    Ok(Comparison::new(stream, comparing, offer.name.clone(), cancellation, cancel_socket))
 }
 
 fn ask(question: &str) -> String {
@@ -412,6 +511,66 @@ mod tests {
         let (ra, rb, a, b) = compare(true, false, "no");
         assert!(ra.is_err() && rb.is_err());
         assert!(a.devices_now().is_empty() && b.devices_now().is_empty());
+    }
+
+    #[test]
+    fn cancelling_while_confirmation_waits_interrupts_the_socket_and_pins_nothing_locally() {
+        use std::sync::mpsc;
+        let (a, b) = (temp_store("cancel-confirm-a"), temp_store("cancel-confirm-b"));
+        let offering = offer(&a, "pythia").unwrap();
+        let (o, port) = (offering.offer.clone(), offering.offer.port);
+        let accepting = std::thread::spawn(move || (offering.accept(&a, &Cancel::new()).unwrap(), a));
+        let other = pick(&b, &o, SocketAddr::from(([127, 0, 0, 1], port))).unwrap();
+        let (comparison, a) = accepting.join().unwrap();
+        let cancel = comparison.cancellation();
+        let (done, result) = mpsc::channel();
+        let finishing = std::thread::spawn(move || {
+            let answer = comparison.finish(&a, true);
+            done.send((answer, a)).unwrap();
+        });
+        // Observe the actual answer frame without consuming it: finish is now waiting for the other screen.
+        other.stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        assert!(other.stream.peek(&mut [0u8; 1]).unwrap() > 0);
+        cancel.cancel();
+        let (answer, a) = result.recv_timeout(Duration::from_secs(3)).expect("cancellation did not wake confirmation");
+        finishing.join().unwrap();
+        assert!(answer.is_err(), "{answer:?}");
+        assert!(a.devices_now().is_empty());
+    }
+
+    #[test]
+    fn cancellation_before_commit_never_runs_identity_persistence() {
+        let cancel = ComparisonCancel::new();
+        cancel.cancel();
+        let answer: Result<(), String> = cancel.commit(|| panic!("cancelled confirmation reached persistence"));
+        assert!(answer.is_err());
+    }
+
+    #[test]
+    fn persistence_which_wins_the_commit_lock_reports_its_actual_success() {
+        use std::sync::mpsc;
+        let cancel = Arc::new(ComparisonCancel::new());
+        let (entered, committing) = mpsc::channel();
+        let (finish, release) = mpsc::channel();
+        let persisting = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                cancel.commit(|| {
+                    entered.send(()).unwrap();
+                    release.recv().unwrap();
+                    Ok("paired")
+                })
+            })
+        };
+        committing.recv_timeout(Duration::from_secs(3)).unwrap();
+        let stopping = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || cancel.cancel())
+        };
+        finish.send(()).unwrap();
+        assert_eq!(persisting.join().unwrap(), Ok("paired"));
+        stopping.join().unwrap();
+        assert!(cancel.is_cancelled());
     }
 
     /// Owner, 2026-10-16: a computer pairs with another computer (Pythia's

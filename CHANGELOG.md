@@ -5,6 +5,14 @@ All notable changes to mytop-sync. Versions follow [Semantic Versioning](https:/
 
 ## [Unreleased]
 
+## [0.2.3]
+
+### Added
+- A comparison cancellation handle interrupts a pending handshake or confirmation. Existing pairing APIs remain compatible.
+
+### Fixed
+- Cancellation which wins before local identity persistence prevents a local pin; persistence which already won reports its actual successful pairing.
+
 ## [0.2.2]
 
 ### Changed
