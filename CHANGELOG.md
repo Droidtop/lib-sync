@@ -8,9 +8,11 @@ All notable changes to mytop-sync. Versions follow [Semantic Versioning](https:/
 ## [0.2.3]
 
 ### Added
+- Discovery publications can hold a generation lease, so delayed cleanup cannot withdraw a newer advertisement.
 - A comparison cancellation handle interrupts a pending handshake or confirmation. Existing pairing APIs remain compatible.
 
 ### Fixed
+- Overlapping pairing offers share the fallback UDP responder until its last owner leaves, so replacing an offer cannot make the new one undiscoverable.
 - Windows confirmation cancellation observes bounded I/O slices when socket shutdown alone does not wake a blocked receive.
 - Cancellation which wins before local identity persistence prevents a local pin; persistence which already won reports its actual successful pairing.
 

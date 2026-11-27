@@ -17,7 +17,7 @@
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rand_core::{OsRng, RngCore};
@@ -44,16 +44,52 @@ pub struct Offer {
     pub program: String,
 }
 
-static OFFER: Mutex<Option<Offer>> = Mutex::new(None);
+struct PublishedOffer {
+    offer: Offer,
+    generation: Arc<()>,
+}
+
+static OFFER: Mutex<Option<PublishedOffer>> = Mutex::new(None);
 
 /// Sets what this process answers `DTCQ1` with, or stops answering (None).
 /// Every answering loop in the process reads it.
 pub fn offer(o: Option<Offer>) {
-    *OFFER.lock().unwrap_or_else(|e| e.into_inner()) = o;
+    *OFFER.lock().unwrap_or_else(|e| e.into_inner()) = o.map(|offer| PublishedOffer { offer, generation: Arc::new(()) });
+}
+
+/// One publication's ownership. Dropping an old lease cannot clear a newer advertisement, even with identical fields.
+pub struct OfferLease {
+    generation: Arc<()>,
+}
+
+impl OfferLease {
+    /// Withdraws this publication only, returning false if it has already been replaced or withdrawn.
+    pub fn withdraw(&self) -> bool {
+        let mut current = OFFER.lock().unwrap_or_else(|e| e.into_inner());
+        if current.as_ref().is_some_and(|offer| Arc::ptr_eq(&offer.generation, &self.generation)) {
+            *current = None;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Drop for OfferLease {
+    fn drop(&mut self) {
+        self.withdraw();
+    }
+}
+
+/// Publishes an offer with scoped cleanup. The existing [`offer`] setter remains compatible and replaces old leases.
+pub fn offer_lease(offer: Offer) -> OfferLease {
+    let generation = Arc::new(());
+    *OFFER.lock().unwrap_or_else(|e| e.into_inner()) = Some(PublishedOffer { offer, generation: generation.clone() });
+    OfferLease { generation }
 }
 
 fn current_offer() -> Option<Offer> {
-    OFFER.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    OFFER.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|current| current.offer.clone())
 }
 
 /// Answers a `DTCQ1` packet with the current offer; true when it was one.
@@ -258,9 +294,11 @@ pub fn answer_pairing(sock: &UdpSocket, me: &Announce, stop: &AtomicBool) -> io:
 #[cfg(test)]
 mod tests {
     use super::*;
+    static OFFERS_SERIAL: Mutex<()> = Mutex::new(());
 
     #[test]
     fn an_offer_is_answered_only_while_it_is_set() {
+        let _serial = OFFERS_SERIAL.lock().unwrap();
         let sock = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let asker = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         asker.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
@@ -275,6 +313,24 @@ mod tests {
         assert!(answer_offer(&sock, &query, asker.local_addr().unwrap()));
         assert!(asker.recv_from(&mut buf).is_err());
         assert!(!answer_offer(&sock, b"DTAQ1{}", asker.local_addr().unwrap()));
+    }
+
+    #[test]
+    fn delayed_lease_cleanup_cannot_clear_a_newer_identical_offer_or_legacy_publication() {
+        let _serial = OFFERS_SERIAL.lock().unwrap();
+        let offer_value = Offer { id: "id".into(), name: "Desk".into(), port: 47612, program: "pythia".into() };
+        let old = offer_lease(offer_value.clone());
+        let new = offer_lease(offer_value.clone());
+        drop(old);
+        assert_eq!(current_offer(), Some(offer_value.clone()));
+        assert!(new.withdraw());
+        assert_eq!(current_offer(), None);
+        drop(new);
+        let old = offer_lease(offer_value.clone());
+        offer(Some(offer_value.clone()));
+        drop(old);
+        assert_eq!(current_offer(), Some(offer_value));
+        offer(None);
     }
 
     #[test]

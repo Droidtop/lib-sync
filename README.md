@@ -71,3 +71,10 @@ so retaining an old handle cannot keep a completed connection open. Existing
 `accept`, `pick` and `finish` callers remain source compatible.
 
 Comparison I/O retries 100ms socket timeouts internally while keeping partial-frame state and the existing two-minute answer deadline. This also makes cancellation bounded on Windows, where shutting down a duplicated socket may not wake an already blocked receive.
+
+Discovery `offer_lease` returns generation-owned cleanup; dropping an old lease
+cannot withdraw a newer publication, even if its fields are identical. The
+legacy `offer` setter remains compatible and replaces prior leases. Pairing
+`Offering` uses that lease and shares its fallback UDP responder across
+overlapping offers; only the last owner stops the responder. This prevents
+old accept-thread cleanup from hiding a replacement pairing window.

@@ -216,8 +216,57 @@ const ANSWER_FOR: Duration = Duration::from_secs(120);
 pub struct Offering {
     listener: TcpListener,
     pub offer: discovery::Offer,
+    advertisement: discovery::OfferLease,
+    _answering: Option<AnsweringLease>,
+}
+
+struct Answering {
     stop: Arc<AtomicBool>,
-    answering: Option<std::thread::JoinHandle<()>>,
+    thread: std::thread::JoinHandle<()>,
+}
+
+struct AnsweringState {
+    users: usize,
+    answering: Option<Answering>,
+}
+
+static ANSWERING: Mutex<AnsweringState> = Mutex::new(AnsweringState { users: 0, answering: None });
+
+// Overlapping offers share the fallback responder. An old offer must not stop the only responder after a newer
+// offer failed to bind its already-occupied UDP port. Creation and last-owner shutdown are serialized as well.
+struct AnsweringLease;
+
+fn answering_lease() -> Option<AnsweringLease> {
+    let mut state = ANSWERING.locked();
+    if state.answering.as_ref().is_some_and(|answering| answering.thread.is_finished()) {
+        if let Some(answering) = state.answering.take() {
+            let _ = answering.thread.join();
+        }
+    }
+    if state.answering.is_none() {
+        let sock = UdpSocket::bind(("0.0.0.0", PORT)).ok()?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopping = stop.clone();
+        let thread = std::thread::spawn(move || {
+            let _ = discovery::answer_offers(&sock, &stopping);
+        });
+        state.answering = Some(Answering { stop, thread });
+    }
+    state.users += 1;
+    Some(AnsweringLease)
+}
+
+impl Drop for AnsweringLease {
+    fn drop(&mut self) {
+        let mut state = ANSWERING.locked();
+        state.users -= 1;
+        if state.users == 0 {
+            if let Some(answering) = state.answering.take() {
+                answering.stop.store(true, Ordering::Relaxed);
+                let _ = answering.thread.join();
+            }
+        }
+    }
 }
 
 /// Starts offering. [`program`] is what this computer runs (`pythia` or
@@ -229,24 +278,14 @@ pub fn offer(store: &Store, program: &str) -> Result<Offering, String> {
         .map_err(|e| format!("Could not open a port for pairing: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let offer = discovery::Offer { id: store.peer_id().to_hex(), name: store.name(), port, program: program.into() };
-    discovery::offer(Some(offer.clone()));
-    let stop = Arc::new(AtomicBool::new(false));
-    let answering = UdpSocket::bind(("0.0.0.0", PORT)).ok().map(|sock| {
-        let stop = stop.clone();
-        std::thread::spawn(move || {
-            let _ = discovery::answer_offers(&sock, &stop);
-        })
-    });
-    Ok(Offering { listener, offer, stop, answering })
+    let advertisement = discovery::offer_lease(offer.clone());
+    let answering = answering_lease();
+    Ok(Offering { listener, offer, advertisement, _answering: answering })
 }
 
 impl Drop for Offering {
     fn drop(&mut self) {
-        discovery::offer(None);
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(t) = self.answering.take() {
-            let _ = t.join();
-        }
+        self.advertisement.withdraw();
     }
 }
 
@@ -515,6 +554,7 @@ pub fn compare_find(store: &Store) -> Result<String, String> {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
+    static OFFERS_SERIAL: Mutex<()> = Mutex::new(());
 
     #[test]
     fn interfaces_are_named_for_what_they_are() {
@@ -556,6 +596,7 @@ mod tests {
     /// droidtop SPEC 7o: one code on both screens, confirmed on both.
     #[test]
     fn a_computer_picked_from_the_list_pairs_by_comparing_codes() {
+        let _serial = OFFERS_SERIAL.locked();
         let (ra, rb, a, b) = compare(true, true, "cmp");
         assert!(ra.is_ok() && rb.is_ok(), "{ra:?} {rb:?}");
         assert!(a.devices_now().iter().any(|d| d.id == b.peer_id().to_hex() && d.kind == Some(Kind::Computer)));
@@ -564,6 +605,7 @@ mod tests {
 
     #[test]
     fn a_no_on_either_screen_pins_nothing() {
+        let _serial = OFFERS_SERIAL.locked();
         let (ra, rb, a, b) = compare(true, false, "no");
         assert!(ra.is_err() && rb.is_err());
         assert!(a.devices_now().is_empty() && b.devices_now().is_empty());
@@ -571,6 +613,7 @@ mod tests {
 
     #[test]
     fn cancelling_while_confirmation_waits_interrupts_the_socket_and_pins_nothing_locally() {
+        let _serial = OFFERS_SERIAL.locked();
         use std::sync::mpsc;
         let (a, b) = (temp_store("cancel-confirm-a"), temp_store("cancel-confirm-b"));
         let offering = offer(&a, "pythia").unwrap();
@@ -592,6 +635,23 @@ mod tests {
         finishing.join().unwrap();
         assert!(answer.is_err(), "{answer:?}");
         assert!(a.devices_now().is_empty());
+    }
+
+    #[test]
+    fn dropping_an_old_offer_keeps_the_new_offer_discoverable() {
+        let _serial = OFFERS_SERIAL.locked();
+        let store = temp_store("offer-replacement");
+        let old = offer(&store, "old").unwrap();
+        let new = offer(&store, "new").unwrap();
+        drop(old);
+        let query = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        query.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        query.send_to(b"DTCQ1{\"nonce\":\"test\",\"from\":\"\"}", (Ipv4Addr::LOCALHOST, PORT)).unwrap();
+        let mut reply = [0u8; 2048];
+        let (n, _) = query.recv_from(&mut reply).expect("the newer offer lost its UDP responder");
+        assert!(reply[..n].starts_with(b"DTCR1"));
+        let found: discovery::Offer = serde_json::from_slice(&reply[5..n]).unwrap();
+        assert_eq!(found, new.offer);
     }
 
     #[test]
