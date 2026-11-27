@@ -16,3 +16,6 @@ droidtop-agent-core = { package = "sync-core", path = "../core" }
 droidtop-agent-store = { package = "sync-store", path = "../store" }
 # This computer's addresses, for the pairing screens.
 if-addrs.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

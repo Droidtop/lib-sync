@@ -2988,6 +2988,7 @@ name = "sync-pair"
 version = "0.2.3"
 dependencies = [
  "if-addrs",
+ "serde_json",
  "sync-core",
  "sync-store",
 ]
