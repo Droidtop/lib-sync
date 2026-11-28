@@ -11,7 +11,7 @@
 //! computer's [`Store`], so the window, the command line and a desktop
 //! manager (Pythia) pair the same way.
 
-use std::io::{self, Write};
+use std::io::Write;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -513,7 +513,7 @@ pub fn compare_find(store: &Store) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::io::{self, Read};
     use std::net::Ipv4Addr;
     static OFFERS_SERIAL: Mutex<()> = Mutex::new(());
 
