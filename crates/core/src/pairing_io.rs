@@ -23,7 +23,7 @@ impl<'a, F: Fn() -> bool> CancellableIo<'a, F> {
         Ok(Self { stream, cancelled, until })
     }
 
-    fn check(&self) -> io::Result<()> {
+    pub(crate) fn check(&self) -> io::Result<()> {
         if (self.cancelled)() {
             return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Pairing stopped."));
         }

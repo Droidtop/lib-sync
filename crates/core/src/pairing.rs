@@ -297,7 +297,11 @@ pub fn accept_pairing(
         })?;
         let until = deadline.min(Instant::now() + EXCHANGE_TIMEOUT);
         let mut io = CancellableIo::new(&mut stream, until, || cancel.is_cancelled()).map_err(PairingEnded::Io)?;
-        let result = pair_host(&mut io, key, name, kind, code);
+        let result = pair_host(&mut io, key, name, kind, code).and_then(|paired| {
+            // The final socket call or proof computation can finish after its last pre-I/O check.
+            io.check()?;
+            Ok(paired)
+        });
         if cancel.is_cancelled() {
             return Err(PairingEnded::Cancelled);
         }
