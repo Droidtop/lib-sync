@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 pub struct Cancel {
     flag: AtomicBool,
     wake: Mutex<Option<SocketAddr>>,
+    commit: Mutex<()>,
 }
 
 impl Cancel {
@@ -27,7 +28,9 @@ impl Cancel {
 
     /// Ends the wait now, whether it has started or not.
     pub fn cancel(&self) {
+        let commit = self.commit.lock().unwrap_or_else(|e| e.into_inner());
         self.flag.store(true, Ordering::SeqCst);
+        drop(commit);
         if let Some(at) = *self.wake.lock().unwrap_or_else(|e| e.into_inner()) {
             wake(at);
         }
@@ -35,6 +38,16 @@ impl Cancel {
 
     pub fn is_cancelled(&self) -> bool {
         self.flag.load(Ordering::SeqCst)
+    }
+
+    /// Order a short local side effect against cancellation. If it already began, its real result wins.
+    /// The callback must not re-enter this handle's cancel/commit methods.
+    pub fn commit<T>(&self, action: impl FnOnce() -> T) -> Result<T, Ended> {
+        let _commit = self.commit.lock().unwrap_or_else(|e| e.into_inner());
+        if self.is_cancelled() {
+            return Err(Ended::Cancelled);
+        }
+        Ok(action())
     }
 
     fn arm(&self, at: Option<SocketAddr>) {
@@ -181,5 +194,40 @@ mod tests {
         cancel.cancel();
         let waiting = Waiting::new(&l, &cancel, None).unwrap();
         assert!(matches!(waiting.accept(), Err(Ended::Cancelled)));
+    }
+
+    #[test]
+    fn cancellation_before_commit_prevents_the_local_side_effect() {
+        let cancel = Cancel::new();
+        cancel.cancel();
+        let result: Result<(), Ended> = cancel.commit(|| panic!("cancelled invitation reached persistence"));
+        assert!(matches!(result, Err(Ended::Cancelled)));
+    }
+
+    #[test]
+    fn a_commit_which_already_won_reports_its_real_result() {
+        use std::sync::mpsc;
+        let cancel = Arc::new(Cancel::new());
+        let (entered, committing) = mpsc::channel();
+        let (finish, release) = mpsc::channel();
+        let persisting = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                cancel.commit(|| {
+                    entered.send(()).unwrap();
+                    release.recv().unwrap();
+                    "paired"
+                })
+            })
+        };
+        committing.recv_timeout(Duration::from_secs(3)).unwrap();
+        let stopping = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || cancel.cancel())
+        };
+        finish.send(()).unwrap();
+        assert_eq!(persisting.join().unwrap().unwrap(), "paired");
+        stopping.join().unwrap();
+        assert!(cancel.is_cancelled());
     }
 }

@@ -2960,7 +2960,7 @@ dependencies = [
 
 [[package]]
 name = "sync-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "age",
  "boringtun",
@@ -2985,7 +2985,7 @@ dependencies = [
 
 [[package]]
 name = "sync-pair"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "if-addrs",
  "serde_json",
@@ -2995,7 +2995,7 @@ dependencies = [
 
 [[package]]
 name = "sync-store"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "dirs",
  "gethostname",

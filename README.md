@@ -54,6 +54,21 @@ and the other libraries, depend on a tag:
 droidtop-agent-core = { package = "sync-core", git = "https://github.com/mytop-project/mytop-sync", tag = "v0.1.0" }
 ```
 
+## Stopping an invitation-code host
+
+The existing `sync-pair::wait(store, showing, cancel)` API observes its
+`sync-core::accept::Cancel` during the accepted handshake as well as while
+waiting for a connection. It uses the same 100ms I/O slices as comparisons,
+with the invitation's expiry and the existing exchange deadline.
+Cancellation and the local identity write share `Cancel::commit`: cancellation
+which wins prevents a local pin; a write which already won reports its actual
+result. Callers of the lower-level `accept_pairing` must use that commit guard
+around their own subsequent persistence.
+
+Outgoing `pair(store, input)` retains its current API without a cancellation
+handle. An outgoing Stop action remains a separate design with the handheld
+caller; this host-side change does not claim to implement it.
+
 ## Cancelling a comparison
 
 `sync-pair::ComparisonCancel` belongs to one comparison. Keep its `Arc` when

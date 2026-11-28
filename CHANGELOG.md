@@ -5,6 +5,18 @@ All notable changes to mytop-sync. Versions follow [Semantic Versioning](https:/
 
 ## [Unreleased]
 
+## [0.2.4]
+
+### Fixed
+- Stopping an invitation-code host interrupts an already accepted pairing handshake, including on Windows.
+- Invitation hosting orders cancellation against local identity persistence: a cancelled exchange cannot pin locally; a persistence operation which already won returns its actual result.
+
+### Changed
+- Invitation and comparison pairing use one shared implementation of bounded, cancellation-aware stream I/O.
+
+### Known limits
+- Outgoing invitation pairing still has no cancellation handle. Its Stop control needs a separate design with the handheld caller.
+
 ## [0.2.3]
 
 ### Added

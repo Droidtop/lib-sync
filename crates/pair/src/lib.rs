@@ -11,7 +11,7 @@
 //! computer's [`Store`], so the window, the command line and a desktop
 //! manager (Pythia) pair the same way.
 
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use droidtop_agent_core::accept::{Cancel, Ended, Waiting};
 use droidtop_agent_core::confirm::{self, Comparing};
 use droidtop_agent_core::pairing::{accept_pairing, new_code, pair_client, Kind, PairInvite, Paired, PairingEnded, MAX_ATTEMPTS};
+use droidtop_agent_core::pairing_io::CancellableIo;
 use droidtop_agent_core::sync::LockExt;
 use droidtop_agent_core::{discovery, PAIR_PORT, PORT};
 
@@ -155,7 +156,15 @@ pub fn wait(store: &Store, showing: Showing, cancel: &Cancel) -> Result<String, 
     match accept_pairing(&listener, &store.key, &store.name(), Kind::Computer, &code, cancel, deadline, |from, e| {
         eprintln!("A pairing attempt from {from} failed: {e}")
     }) {
-        Ok((paired, _)) => keep(store, paired),
+        Ok((paired, _)) => cancel
+            .commit(|| {
+                if Instant::now() >= deadline {
+                    Err("Nothing paired in time. Run droidtop-agent pair again for a new code.".into())
+                } else {
+                    keep(store, paired)
+                }
+            })
+            .map_err(|_| "Pairing stopped.".to_string())?,
         Err(PairingEnded::Cancelled) => Err("Pairing stopped.".into()),
         Err(PairingEnded::TimedOut) => Err("Nothing paired in time. Run droidtop-agent pair again for a new code.".into()),
         Err(PairingEnded::TooManyWrong(_)) => {
@@ -353,60 +362,11 @@ impl ComparisonCancel {
     }
 }
 
-// Windows does not reliably wake a receive already blocked on another duplicated socket when it is shut down.
-// Retry short I/O deadlines inside Read/Write, retaining partial-frame state in the caller's read_exact/write_all.
-struct CancellableIo<'a> {
+fn comparison_io<'a>(
     stream: &'a mut TcpStream,
     cancellation: &'a ComparisonCancel,
-    until: Instant,
-}
-
-impl<'a> CancellableIo<'a> {
-    fn new(stream: &'a mut TcpStream, cancellation: &'a ComparisonCancel) -> Result<Self, String> {
-        let slice = Some(Duration::from_millis(100));
-        stream.set_read_timeout(slice).map_err(|e| e.to_string())?;
-        stream.set_write_timeout(slice).map_err(|e| e.to_string())?;
-        Ok(Self { stream, cancellation, until: Instant::now() + ANSWER_FOR })
-    }
-
-    fn check(&self) -> io::Result<()> {
-        if self.cancellation.is_cancelled() {
-            return Err(io::Error::new(io::ErrorKind::ConnectionAborted, "Pairing stopped."));
-        }
-        if Instant::now() >= self.until {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, "The other screen did not finish pairing in time."));
-        }
-        Ok(())
-    }
-}
-
-impl Read for CancellableIo<'_> {
-    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        loop {
-            self.check()?;
-            match self.stream.read(bytes) {
-                Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
-                result => return result,
-            }
-        }
-    }
-}
-
-impl Write for CancellableIo<'_> {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        loop {
-            self.check()?;
-            match self.stream.write(bytes) {
-                Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) => {}
-                result => return result,
-            }
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.check()?;
-        self.stream.flush()
-    }
+) -> Result<CancellableIo<'a, impl Fn() -> bool + 'a>, String> {
+    CancellableIo::new(stream, Instant::now() + ANSWER_FOR, move || cancellation.is_cancelled()).map_err(|e| e.to_string())
 }
 
 impl Offering {
@@ -437,7 +397,7 @@ impl Offering {
         };
         let cancel_socket = comparison_cancel.arm(&stream)?;
         drop(self);
-        let comparing = confirm::host_start(&mut CancellableIo::new(&mut stream, &comparison_cancel)?, &store.key)
+        let comparing = confirm::host_start(&mut comparison_io(&mut stream, &comparison_cancel)?, &store.key)
             .map_err(|e| format!("Pairing did not start: {e}"))?;
         Ok(Comparison::new(stream, comparing, String::new(), comparison_cancel, cancel_socket))
     }
@@ -467,7 +427,7 @@ impl Comparison {
         }
         let paired = self
             .comparing
-            .finish(&mut CancellableIo::new(&mut self.stream, &self.cancellation)?, &store.key, &store.name(), Kind::Computer, same)
+            .finish(&mut comparison_io(&mut self.stream, &self.cancellation)?, &store.key, &store.name(), Kind::Computer, same)
             .map_err(|e| format!("Nothing was paired: {e}"))?;
         self.cancellation.commit(|| keep(store, paired))
     }
@@ -500,7 +460,7 @@ pub fn pick_with_cancel(
     let mut stream =
         TcpStream::connect_timeout(&at, Duration::from_secs(10)).map_err(|e| format!("Could not reach {} at {at}: {e}", offer.name))?;
     let cancel_socket = cancellation.arm(&stream)?;
-    let comparing = confirm::client_start(&mut CancellableIo::new(&mut stream, &cancellation)?, &store.key)
+    let comparing = confirm::client_start(&mut comparison_io(&mut stream, &cancellation)?, &store.key)
         .map_err(|e| format!("Pairing did not start: {e}"))?;
     if comparing.other.to_hex() != offer.id {
         return Err(format!("The device at {at} is not {}; nothing was paired.", offer.name));
@@ -553,8 +513,75 @@ pub fn compare_find(store: &Store) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
     use std::net::Ipv4Addr;
     static OFFERS_SERIAL: Mutex<()> = Mutex::new(());
+
+    struct PausedAfterHostHello {
+        stream: TcpStream,
+        hello: Option<std::sync::mpsc::Sender<()>>,
+        resume: std::sync::mpsc::Receiver<()>,
+    }
+
+    impl Read for PausedAfterHostHello {
+        fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+            let n = self.stream.read(bytes)?;
+            if n != 0 {
+                if let Some(hello) = self.hello.take() {
+                    hello.send(()).unwrap();
+                    // The host accepted a real pairing hello and is waiting for this client's proof.
+                    let _ = self.resume.recv();
+                }
+            }
+            Ok(n)
+        }
+    }
+
+    impl Write for PausedAfterHostHello {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.stream.write(bytes)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            self.stream.flush()
+        }
+    }
+
+    #[test]
+    fn stop_during_an_accepted_invitation_handshake_returns_promptly_and_pins_nothing() {
+        use std::sync::mpsc;
+        let a = temp_store("cancel-invitation-host");
+        let b = temp_store("cancel-invitation-client");
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let code = new_code();
+        let showing =
+            Showing { listener, port, code: code.clone(), addresses: Vec::new(), places: Vec::new(), until: Instant::now() + SHOW_FOR };
+        let cancel = Arc::new(Cancel::new());
+        let (done, result) = mpsc::channel();
+        let hosting = {
+            let cancel = cancel.clone();
+            std::thread::spawn(move || {
+                let answer = wait(&a, showing, &cancel);
+                done.send((answer, a)).unwrap();
+            })
+        };
+        let (hello, accepted) = mpsc::channel();
+        let (resume, paused) = mpsc::channel();
+        let client = std::thread::spawn(move || {
+            let stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut stream = PausedAfterHostHello { stream, hello: Some(hello), resume: paused };
+            pair_client(&mut stream, &b.key, "CI client", Kind::Computer, &code)
+        });
+        accepted.recv_timeout(Duration::from_secs(5)).expect("the host never accepted the pairing hello");
+        cancel.cancel();
+        let (answer, a) = result.recv_timeout(Duration::from_secs(3)).expect("Stop did not interrupt the accepted invitation");
+        let _ = resume.send(());
+        hosting.join().unwrap();
+        assert!(client.join().unwrap().is_err());
+        assert!(answer.unwrap_err().contains("stopped"));
+        assert!(a.devices_now().is_empty());
+    }
 
     #[test]
     fn interfaces_are_named_for_what_they_are() {

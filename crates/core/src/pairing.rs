@@ -25,6 +25,7 @@ use windowcast_pairing::{finish, start_client, start_host, SessionKey};
 use crate::accept::{Cancel, Ended, Waiting};
 use crate::frame::{read_frame, write_frame, MAX_PLAIN_FRAME};
 use crate::keys::{DeviceKey, PeerId};
+use crate::pairing_io::CancellableIo;
 use crate::{cert, hex, Error, Result};
 
 /// The URI scheme of the QR code the handheld shows.
@@ -273,6 +274,8 @@ pub enum PairingEnded {
 /// computer's `pair` command and window): waits on [`listener`] until a device completes the exchange as the host,
 /// [`MAX_ATTEMPTS`] connections failed it, [`cancel`] is called or [`deadline`] passes. [`on_failure`] is told of each
 /// failed attempt. Returns who paired and where from.
+/// Accepted exchanges observe cancellation too. A caller which persists the returned identity must order that
+/// local side effect through [`Cancel::commit`], as a returned value cannot guard a later independent write.
 #[allow(clippy::too_many_arguments)]
 pub fn accept_pairing(
     listener: &TcpListener,
@@ -292,8 +295,16 @@ pub fn accept_pairing(
             Ended::TimedOut => PairingEnded::TimedOut,
             Ended::Io(e) => PairingEnded::Io(e),
         })?;
-        stream.set_read_timeout(Some(EXCHANGE_TIMEOUT)).map_err(PairingEnded::Io)?;
-        match pair_host(&mut stream, key, name, kind, code) {
+        let until = deadline.min(Instant::now() + EXCHANGE_TIMEOUT);
+        let mut io = CancellableIo::new(&mut stream, until, || cancel.is_cancelled()).map_err(PairingEnded::Io)?;
+        let result = pair_host(&mut io, key, name, kind, code);
+        if cancel.is_cancelled() {
+            return Err(PairingEnded::Cancelled);
+        }
+        if Instant::now() >= deadline {
+            return Err(PairingEnded::TimedOut);
+        }
+        match result {
             Ok(paired) => return Ok((paired, from)),
             Err(e) => {
                 attempts += 1;

@@ -27,6 +27,7 @@ pub mod mailbox;
 pub mod manifest;
 pub mod moved;
 pub mod pairing;
+pub mod pairing_io;
 pub mod proto;
 pub mod rendezvous;
 pub mod saves;
